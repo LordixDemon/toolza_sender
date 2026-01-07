@@ -85,8 +85,10 @@ impl App {
         let t = self.t();
         
         egui::SidePanel::left("mode_panel")
-            .min_width(140.0)
-            .max_width(160.0)
+            .resizable(true)
+            .min_width(120.0)
+            .default_width(160.0)
+            .max_width(400.0)
             .show(ctx, |ui| {
                 ui.add_space(10.0);
                 
@@ -140,8 +142,10 @@ impl App {
                 
                 ui.add_space(10.0);
                 ui.label(t.status);
+                
+                // Статус с автоматической прокруткой - занимает оставшееся место
                 egui::ScrollArea::vertical()
-                    .max_height(100.0)
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.label(&self.status_message);
                     });
@@ -152,9 +156,10 @@ impl App {
         let t = self.t();
         
         egui::TopBottomPanel::bottom("log_panel")
-            .min_height(80.0)
-            .max_height(150.0)
             .resizable(true)
+            .min_height(60.0)
+            .default_height(100.0)
+            .max_height(400.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading(t.log);
