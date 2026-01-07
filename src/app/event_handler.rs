@@ -167,13 +167,32 @@ impl App {
         self.bytes_compressed = self.bytes_compressed.max(compressed);
         
         // Обновляем статистику скорости
-        let total_transferred: u64 = self.files.iter().map(|f| f.transferred).sum();
+        // На стороне отправки: суммируем по файлам
+        // На стороне приёма: используем transferred напрямую (files пуст)
+        let total_transferred: u64 = if self.files.is_empty() {
+            transferred // Приёмная сторона - используем переданное значение
+        } else {
+            self.files.iter().map(|f| f.transferred).sum()
+        };
+        
+        // Для приёмной стороны устанавливаем total_bytes если не установлен
+        if self.files.is_empty() && self.stats.total_bytes == 0 && original > 0 {
+            self.stats = toolza_sender::stats::TransferStats::new(original, 1);
+            self.transfer_start_time = Some(std::time::Instant::now());
+        }
+        
         self.stats.update(total_transferred, original, compressed);
         
         // Обновляем статус
         let speed = self.stats.speed_formatted();
         let eta = self.stats.eta_formatted();
-        self.status_message = format!("⚡ {} | ETA: {}", speed, eta);
+        let progress_str = if original > 0 {
+            let pct = (transferred as f64 / original as f64 * 100.0).min(100.0);
+            format!(" ({:.1}%)", pct)
+        } else {
+            String::new()
+        };
+        self.status_message = format!("⚡ {} | ETA: {}{}", speed, eta, progress_str);
     }
     
     fn on_file_completed(&mut self, target_id: usize, file_idx: usize) {
