@@ -148,37 +148,84 @@ pub(crate) fn extract_from_channel(
     Ok(())
 }
 
-/// ИСТИННАЯ потоковая распаковка tar.lz4 через транспорт
+/// ИСТИННАЯ потоковая распаковка tar.lz4 через транспорт с поддержкой резюме
 pub(crate) async fn receive_and_extract_streaming_transport(
     stream: &mut dyn TransportStream,
     save_dir: &PathBuf,
     filename: &str,
-    _size: u64, // Не используется - потоковая распаковка
+    size: u64,
     compressed: bool,
     event_tx: &mpsc::UnboundedSender<TransferEvent>,
     stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), String> {
     use std::sync::atomic::Ordering;
+    use tokio::io::{AsyncWriteExt, AsyncSeekExt};
     
-    // Отправляем Ack
-    super::send_ack_transport(stream).await?;
+    // Путь к сырому архиву (для резюме)
+    let raw_file_path = save_dir.join(filename);
+    
+    // Проверяем есть ли частичный файл для резюме
+    let resume_offset = if let Ok(meta) = tokio::fs::metadata(&raw_file_path).await {
+        let current_size = meta.len();
+        if current_size < size {
+            current_size // Есть частичный файл - продолжаем
+        } else {
+            0 // Файл полный или больше - качаем заново
+        }
+    } else {
+        0 // Файла нет
+    };
+    
+    // Отправляем ResumeAck или Ack
+    if resume_offset > 0 {
+        let resume_ack = crate::protocol::Message::ResumeAck { offset: resume_offset };
+        let data = resume_ack.to_bytes().map_err(|e| e.to_string())?;
+        stream.write_all(&data).await.map_err(|e| e.to_string())?;
+        let _ = event_tx.send(TransferEvent::FileReceived(
+            format!("🔄 Возобновление с {:.2} ГБ", resume_offset as f64 / 1024.0 / 1024.0 / 1024.0),
+            0
+        ));
+    } else {
+        super::send_ack_transport(stream).await?;
+    }
     
     let _ = event_tx.send(TransferEvent::ExtractionStarted(filename.to_string()));
     
-    // Создаём канал для передачи данных в распаковщик
-    let (tx, rx) = std_mpsc::sync_channel::<Vec<u8>>(32);
+    // Открываем файл для записи сырых данных (для резюме)
+    let mut raw_file = if resume_offset > 0 {
+        let mut f = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&raw_file_path)
+            .await
+            .map_err(|e| format!("Не удалось открыть файл: {}", e))?;
+        f.seek(std::io::SeekFrom::Start(resume_offset)).await.map_err(|e| e.to_string())?;
+        f
+    } else {
+        tokio::fs::File::create(&raw_file_path)
+            .await
+            .map_err(|e| format!("Не удалось создать файл: {}", e))?
+    };
     
-    // Запускаем распаковщик в отдельном потоке
+    // Создаём канал для передачи данных в распаковщик (только если начинаем с нуля)
+    let (tx, rx) = std_mpsc::sync_channel::<Vec<u8>>(32);
+    let streaming_extract = resume_offset == 0; // Потоковая распаковка только с начала
+    
+    // Запускаем распаковщик в отдельном потоке (если не резюме)
     let output_dir = save_dir.clone();
     let event_tx_clone = event_tx.clone();
     let filename_clone = filename.to_string();
     
-    let extract_handle = std::thread::spawn(move || {
-        extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
-    });
+    let extract_handle = if streaming_extract {
+        Some(std::thread::spawn(move || {
+            extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+        }))
+    } else {
+        drop(rx); // Не используем канал при резюме
+        None
+    };
     
-    // Читаем данные из сети и отправляем в канал
-    let mut received_bytes = 0u64;
+    // Читаем данные из сети
+    let mut received_bytes = resume_offset;
     let start_time = Instant::now();
     let mut last_progress_update = Instant::now();
     let mut network_error: Option<String> = None;
@@ -186,11 +233,19 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     loop {
         // Проверяем флаг остановки
         if stop_flag.load(Ordering::SeqCst) {
-            drop(tx); // Закрываем канал чтобы распаковщик завершился
+            // Сохраняем прогресс в файл
+            let _ = raw_file.flush().await;
+            drop(tx);
+            if let Some(handle) = extract_handle {
+                let _ = event_tx.send(TransferEvent::FileReceived(
+                    "⏳ Ожидание завершения распаковки...".to_string(), 0
+                ));
+                let _ = handle.join();
+            }
             let _ = event_tx.send(TransferEvent::FileReceived(
-                "⏳ Ожидание завершения распаковки...".to_string(), 0
+                format!("⏸️ Приостановлено: {:.2} ГБ сохранено", received_bytes as f64 / 1024.0 / 1024.0 / 1024.0),
+                received_bytes
             ));
-            let _ = extract_handle.join();
             return Err("⛔ Остановлено пользователем".to_string());
         }
         
@@ -198,7 +253,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
         match stream.read_exact(&mut len_buf).await {
             Ok(_) => {}
             Err(e) => {
-                // Клиент отключился - закрываем канал и ждём завершения распаковки
+                let _ = raw_file.flush().await;
                 network_error = Some(e.to_string());
                 break;
             }
@@ -209,6 +264,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
         match stream.read_exact(&mut data).await {
             Ok(_) => {}
             Err(e) => {
+                let _ = raw_file.flush().await;
                 network_error = Some(e.to_string());
                 break;
             }
@@ -217,6 +273,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
         let msg = match Message::from_bytes(&data) {
             Ok(m) => m,
             Err(e) => {
+                let _ = raw_file.flush().await;
                 network_error = Some(e.to_string());
                 break;
             }
@@ -226,11 +283,18 @@ pub(crate) async fn receive_and_extract_streaming_transport(
             Message::FileChunk { data, original_size: _ } => {
                 // Проверяем флаг остановки после каждого чанка
                 if stop_flag.load(Ordering::SeqCst) {
+                    let _ = raw_file.flush().await;
                     drop(tx);
+                    if let Some(handle) = extract_handle {
+                        let _ = event_tx.send(TransferEvent::FileReceived(
+                            "⏳ Ожидание завершения распаковки...".to_string(), 0
+                        ));
+                        let _ = handle.join();
+                    }
                     let _ = event_tx.send(TransferEvent::FileReceived(
-                        "⏳ Ожидание завершения распаковки...".to_string(), 0
+                        format!("⏸️ Приостановлено: {:.2} ГБ сохранено", received_bytes as f64 / 1024.0 / 1024.0 / 1024.0),
+                        received_bytes
                     ));
-                    let _ = extract_handle.join();
                     return Err("⛔ Остановлено пользователем".to_string());
                 }
                 
@@ -238,6 +302,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                     match compression::decompress(&data) {
                         Ok(d) => d,
                         Err(e) => {
+                            let _ = raw_file.flush().await;
                             network_error = Some(e);
                             break;
                         }
@@ -245,98 +310,133 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                 } else {
                     data
                 };
+                
+                // Сохраняем сырые данные в файл (для резюме)
+                if let Err(e) = raw_file.write_all(&chunk_data).await {
+                    network_error = Some(e.to_string());
+                    break;
+                }
+                
                 received_bytes += chunk_data.len() as u64;
                 
                 if last_progress_update.elapsed().as_secs() >= 1 {
                     let _ = event_tx.send(TransferEvent::Progress(
-                        0, 0, received_bytes, _size, received_bytes,
+                        0, 0, received_bytes, size, received_bytes,
                     ));
                     last_progress_update = Instant::now();
                 }
                 
-                if tx.send(chunk_data).is_err() {
-                    return Err("Ошибка: распаковщик завершился раньше времени".to_string());
+                // Отправляем в распаковщик только если потоковая распаковка
+                if streaming_extract {
+                    if tx.send(chunk_data).is_err() {
+                        return Err("Ошибка: распаковщик завершился раньше времени".to_string());
+                    }
                 }
             }
             Message::FileEnd => {
+                // Сбрасываем буфер файла
+                let _ = raw_file.flush().await;
+                
                 let elapsed = start_time.elapsed().as_secs_f64();
-                let speed_mbps = if elapsed > 0.0 { received_bytes as f64 / elapsed / 1024.0 / 1024.0 } else { 0.0 };
+                let speed_mbps = if elapsed > 0.0 { (received_bytes - resume_offset) as f64 / elapsed / 1024.0 / 1024.0 } else { 0.0 };
                 
                 let _ = event_tx.send(TransferEvent::Progress(
-                    0, 0, received_bytes, _size, received_bytes,
+                    0, 0, received_bytes, size, received_bytes,
                 ));
                 
-                // Закрываем канал и ждём завершения распаковки
+                // Закрываем канал
                 drop(tx);
-                let _ = event_tx.send(TransferEvent::FileReceived(
-                    "⏳ Завершение распаковки...".to_string(), 0
-                ));
                 
-                match extract_handle.join() {
-                    Ok(Ok(())) => {
-                        let _ = event_tx.send(TransferEvent::FileReceived(
-                            format!("✅ Потоковая распаковка завершена: {:.2} ГБ @ {:.1} MB/s", 
-                                received_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
-                                speed_mbps),
-                            received_bytes
-                        ));
+                if let Some(handle) = extract_handle {
+                    // Потоковая распаковка - ждём завершения
+                    let _ = event_tx.send(TransferEvent::FileReceived(
+                        "⏳ Завершение распаковки...".to_string(), 0
+                    ));
+                    
+                    match handle.join() {
+                        Ok(Ok(())) => {
+                            // Удаляем raw файл после успешной распаковки
+                            let _ = tokio::fs::remove_file(&raw_file_path).await;
+                            let _ = event_tx.send(TransferEvent::FileReceived(
+                                format!("✅ Потоковая распаковка завершена: {:.2} ГБ @ {:.1} MB/s", 
+                                    received_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
+                                    speed_mbps),
+                                received_bytes
+                            ));
+                        }
+                        Ok(Err(e)) => {
+                            let _ = event_tx.send(TransferEvent::ExtractionError(
+                                filename.to_string(),
+                                e,
+                            ));
+                        }
+                        Err(_) => {
+                            let _ = event_tx.send(TransferEvent::ExtractionError(
+                                filename.to_string(),
+                                "Поток распаковки завершился с паникой".to_string(),
+                            ));
+                        }
                     }
-                    Ok(Err(e)) => {
-                        let _ = event_tx.send(TransferEvent::ExtractionError(
-                            filename.to_string(),
-                            e,
-                        ));
-                    }
-                    Err(_) => {
-                        let _ = event_tx.send(TransferEvent::ExtractionError(
-                            filename.to_string(),
-                            "Поток распаковки завершился с паникой".to_string(),
-                        ));
-                    }
+                } else {
+                    // Это было резюме - распаковываем из сохранённого файла
+                    let _ = event_tx.send(TransferEvent::FileReceived(
+                        format!("✅ Докачано: {:.2} ГБ @ {:.1} MB/s, распаковка...", 
+                            received_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
+                            speed_mbps),
+                        received_bytes
+                    ));
+                    
+                    // Запускаем распаковку из файла
+                    let output_dir = save_dir.clone();
+                    let event_tx_clone = event_tx.clone();
+                    let filename_clone = filename.to_string();
+                    let raw_path = raw_file_path.clone();
+                    
+                    tokio::task::spawn_blocking(move || {
+                        match crate::extract::extract_tar_lz4_simple(&raw_path, &output_dir) {
+                            Ok(result) => {
+                                let _ = event_tx_clone.send(TransferEvent::ExtractionCompleted(
+                                    filename_clone,
+                                    result.files_count,
+                                    result.total_size,
+                                ));
+                                // Удаляем raw файл после распаковки
+                                let _ = std::fs::remove_file(&raw_path);
+                            }
+                            Err(e) => {
+                                let _ = event_tx_clone.send(TransferEvent::ExtractionError(
+                                    filename_clone,
+                                    e.to_string(),
+                                ));
+                            }
+                        }
+                    });
                 }
                 
                 super::send_ack_transport(stream).await?;
                 return Ok(());
             }
             _ => {
+                let _ = raw_file.flush().await;
                 network_error = Some("Неожиданное сообщение при получении файла".to_string());
                 break;
             }
         }
     }
     
-    // Если вышли из цикла с ошибкой сети - всё равно ждём завершения распаковки
+    // Если вышли из цикла с ошибкой сети - сохраняем файл и ждём распаковщика
+    let _ = raw_file.flush().await;
     drop(tx);
+    
     let _ = event_tx.send(TransferEvent::FileReceived(
-        format!("⚠️ Клиент отключился, завершаем распаковку ({:.2} ГБ получено)...", 
+        format!("⚠️ Соединение прервано. Сохранено: {:.2} ГБ (можно возобновить)", 
             received_bytes as f64 / 1024.0 / 1024.0 / 1024.0),
-        0
+        received_bytes
     ));
     
-    // Ждём завершения распаковщика с полученными данными
-    match extract_handle.join() {
-        Ok(Ok(())) => {
-            let elapsed = start_time.elapsed().as_secs_f64();
-            let speed_mbps = if elapsed > 0.0 { received_bytes as f64 / elapsed / 1024.0 / 1024.0 } else { 0.0 };
-            let _ = event_tx.send(TransferEvent::FileReceived(
-                format!("✅ Распаковка завершена (частичная): {:.2} ГБ @ {:.1} MB/s", 
-                    received_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
-                    speed_mbps),
-                received_bytes
-            ));
-        }
-        Ok(Err(e)) => {
-            let _ = event_tx.send(TransferEvent::ExtractionError(
-                filename.to_string(),
-                format!("Ошибка распаковки после отключения: {}", e),
-            ));
-        }
-        Err(_) => {
-            let _ = event_tx.send(TransferEvent::ExtractionError(
-                filename.to_string(),
-                "Поток распаковки завершился с паникой".to_string(),
-            ));
-        }
+    // Ждём завершения распаковщика если он был запущен
+    if let Some(handle) = extract_handle {
+        let _ = handle.join();
     }
     
     if let Some(err) = network_error {
