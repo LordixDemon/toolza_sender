@@ -104,6 +104,8 @@ pub struct Translations {
     pub extract_tooltip_tar: &'static str,
     pub extract_tooltip_zip: &'static str,
     pub extract_tooltip_rar: &'static str,
+    pub save_archive_for_resume: &'static str,
+    pub save_archive_tooltip: &'static str,
     
     // === История ===
     pub history_title: &'static str,

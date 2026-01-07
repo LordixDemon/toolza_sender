@@ -37,6 +37,7 @@ pub async fn run_server(
         },
         enable_resume: true,
         transport_type: TransportType::default(),
+        save_archive_for_resume: false,
     };
     
     run_server_with_options(port, save_dir, options, event_tx).await
@@ -57,6 +58,7 @@ pub async fn run_server_with_stop(
         },
         enable_resume: true,
         transport_type: TransportType::default(),
+        save_archive_for_resume: false,
     };
     run_server_with_options_and_stop(port, save_dir, options, event_tx, stop_flag).await
 }

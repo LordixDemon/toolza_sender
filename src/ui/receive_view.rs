@@ -108,6 +108,17 @@ impl App {
             ).on_hover_text(t.extract_tooltip_rar);
         });
         
+        // Опция сохранения архива для резюме (только если включена потоковая распаковка tar.lz4)
+        if self.auto_extract_tar_lz4 {
+            let t = self.t();
+            ui.horizontal(|ui| {
+                ui.add_enabled(
+                    self.can_edit(),
+                    egui::Checkbox::new(&mut self.save_archive_for_resume, t.save_archive_for_resume),
+                ).on_hover_text(t.save_archive_tooltip);
+            });
+        }
+        
         ui.add_space(10.0);
         
         // Кнопки управления

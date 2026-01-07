@@ -277,6 +277,7 @@ impl App {
             },
             enable_resume: true,
             transport_type: self.transport_type,
+            save_archive_for_resume: self.save_archive_for_resume,
         };
         let stop_flag = self.stop_flag.clone();
         let handle = self.runtime.spawn(async move {

@@ -339,6 +339,7 @@ async fn receive_files(port: u16, save_dir: Option<PathBuf>, auto_extract: bool,
         },
         enable_resume: true,
         transport_type,
+        save_archive_for_resume: false, // В CLI по умолчанию чистая потоковая распаковка
     };
     
     // Запускаем сервер

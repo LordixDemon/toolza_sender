@@ -155,25 +155,30 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     filename: &str,
     size: u64,
     compressed: bool,
+    save_archive: bool, // Сохранять архив для возможности резюме
     event_tx: &mpsc::UnboundedSender<TransferEvent>,
     stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), String> {
     use std::sync::atomic::Ordering;
     use tokio::io::{AsyncWriteExt, AsyncSeekExt};
     
-    // Путь к сырому архиву (для резюме)
+    // Путь к сырому архиву (для резюме) - только если включено сохранение
     let raw_file_path = save_dir.join(filename);
     
-    // Проверяем есть ли частичный файл для резюме
-    let resume_offset = if let Ok(meta) = tokio::fs::metadata(&raw_file_path).await {
-        let current_size = meta.len();
-        if current_size < size {
-            current_size // Есть частичный файл - продолжаем
+    // Проверяем есть ли частичный файл для резюме (только если сохраняем)
+    let resume_offset = if save_archive {
+        if let Ok(meta) = tokio::fs::metadata(&raw_file_path).await {
+            let current_size = meta.len();
+            if current_size < size {
+                current_size // Есть частичный файл - продолжаем
+            } else {
+                0 // Файл полный или больше - качаем заново
+            }
         } else {
-            0 // Файл полный или больше - качаем заново
+            0 // Файла нет
         }
     } else {
-        0 // Файла нет
+        0 // Резюме отключено
     };
     
     // Отправляем ResumeAck или Ack
@@ -191,19 +196,23 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     
     let _ = event_tx.send(TransferEvent::ExtractionStarted(filename.to_string()));
     
-    // Открываем файл для записи сырых данных (для резюме)
-    let mut raw_file = if resume_offset > 0 {
-        let mut f = tokio::fs::OpenOptions::new()
-            .write(true)
-            .open(&raw_file_path)
-            .await
-            .map_err(|e| format!("Не удалось открыть файл: {}", e))?;
-        f.seek(std::io::SeekFrom::Start(resume_offset)).await.map_err(|e| e.to_string())?;
-        f
+    // Открываем файл для записи сырых данных (только если включено сохранение)
+    let mut raw_file: Option<tokio::fs::File> = if save_archive {
+        Some(if resume_offset > 0 {
+            let mut f = tokio::fs::OpenOptions::new()
+                .write(true)
+                .open(&raw_file_path)
+                .await
+                .map_err(|e| format!("Не удалось открыть файл: {}", e))?;
+            f.seek(std::io::SeekFrom::Start(resume_offset)).await.map_err(|e| e.to_string())?;
+            f
+        } else {
+            tokio::fs::File::create(&raw_file_path)
+                .await
+                .map_err(|e| format!("Не удалось создать файл: {}", e))?
+        })
     } else {
-        tokio::fs::File::create(&raw_file_path)
-            .await
-            .map_err(|e| format!("Не удалось создать файл: {}", e))?
+        None
     };
     
     // Создаём канал для передачи данных в распаковщик (только если начинаем с нуля)
@@ -233,8 +242,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     loop {
         // Проверяем флаг остановки
         if stop_flag.load(Ordering::SeqCst) {
-            // Сохраняем прогресс в файл
-            let _ = raw_file.flush().await;
+            if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
             drop(tx);
             if let Some(handle) = extract_handle {
                 let _ = event_tx.send(TransferEvent::FileReceived(
@@ -242,10 +250,12 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                 ));
                 let _ = handle.join();
             }
-            let _ = event_tx.send(TransferEvent::FileReceived(
-                format!("⏸️ Приостановлено: {:.2} ГБ сохранено", received_bytes as f64 / 1024.0 / 1024.0 / 1024.0),
-                received_bytes
-            ));
+            let msg = if save_archive {
+                format!("⏸️ Приостановлено: {:.2} ГБ сохранено", received_bytes as f64 / 1024.0 / 1024.0 / 1024.0)
+            } else {
+                "⛔ Остановлено".to_string()
+            };
+            let _ = event_tx.send(TransferEvent::FileReceived(msg, received_bytes));
             return Err("⛔ Остановлено пользователем".to_string());
         }
         
@@ -253,7 +263,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
         match stream.read_exact(&mut len_buf).await {
             Ok(_) => {}
             Err(e) => {
-                let _ = raw_file.flush().await;
+                if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                 network_error = Some(e.to_string());
                 break;
             }
@@ -264,7 +274,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
         match stream.read_exact(&mut data).await {
             Ok(_) => {}
             Err(e) => {
-                let _ = raw_file.flush().await;
+                if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                 network_error = Some(e.to_string());
                 break;
             }
@@ -273,7 +283,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
         let msg = match Message::from_bytes(&data) {
             Ok(m) => m,
             Err(e) => {
-                let _ = raw_file.flush().await;
+                if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                 network_error = Some(e.to_string());
                 break;
             }
@@ -283,7 +293,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
             Message::FileChunk { data, original_size: _ } => {
                 // Проверяем флаг остановки после каждого чанка
                 if stop_flag.load(Ordering::SeqCst) {
-                    let _ = raw_file.flush().await;
+                    if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                     drop(tx);
                     if let Some(handle) = extract_handle {
                         let _ = event_tx.send(TransferEvent::FileReceived(
@@ -291,10 +301,12 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                         ));
                         let _ = handle.join();
                     }
-                    let _ = event_tx.send(TransferEvent::FileReceived(
-                        format!("⏸️ Приостановлено: {:.2} ГБ сохранено", received_bytes as f64 / 1024.0 / 1024.0 / 1024.0),
-                        received_bytes
-                    ));
+                    let msg = if save_archive {
+                        format!("⏸️ Приостановлено: {:.2} ГБ сохранено", received_bytes as f64 / 1024.0 / 1024.0 / 1024.0)
+                    } else {
+                        "⛔ Остановлено".to_string()
+                    };
+                    let _ = event_tx.send(TransferEvent::FileReceived(msg, received_bytes));
                     return Err("⛔ Остановлено пользователем".to_string());
                 }
                 
@@ -302,7 +314,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                     match compression::decompress(&data) {
                         Ok(d) => d,
                         Err(e) => {
-                            let _ = raw_file.flush().await;
+                            if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                             network_error = Some(e);
                             break;
                         }
@@ -311,10 +323,12 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                     data
                 };
                 
-                // Сохраняем сырые данные в файл (для резюме)
-                if let Err(e) = raw_file.write_all(&chunk_data).await {
-                    network_error = Some(e.to_string());
-                    break;
+                // Сохраняем сырые данные в файл (только если включено)
+                if let Some(ref mut f) = raw_file {
+                    if let Err(e) = f.write_all(&chunk_data).await {
+                        network_error = Some(e.to_string());
+                        break;
+                    }
                 }
                 
                 received_bytes += chunk_data.len() as u64;
@@ -335,7 +349,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
             }
             Message::FileEnd => {
                 // Сбрасываем буфер файла
-                let _ = raw_file.flush().await;
+                if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                 
                 let elapsed = start_time.elapsed().as_secs_f64();
                 let speed_mbps = if elapsed > 0.0 { (received_bytes - resume_offset) as f64 / elapsed / 1024.0 / 1024.0 } else { 0.0 };
@@ -355,8 +369,10 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                     
                     match handle.join() {
                         Ok(Ok(())) => {
-                            // Удаляем raw файл после успешной распаковки
-                            let _ = tokio::fs::remove_file(&raw_file_path).await;
+                            // Удаляем raw файл после успешной распаковки (если сохраняли)
+                            if save_archive {
+                                let _ = tokio::fs::remove_file(&raw_file_path).await;
+                            }
                             let _ = event_tx.send(TransferEvent::FileReceived(
                                 format!("✅ Потоковая распаковка завершена: {:.2} ГБ @ {:.1} MB/s", 
                                     received_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
@@ -377,7 +393,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                             ));
                         }
                     }
-                } else {
+                } else if save_archive {
                     // Это было резюме - распаковываем из сохранённого файла
                     let _ = event_tx.send(TransferEvent::FileReceived(
                         format!("✅ Докачано: {:.2} ГБ @ {:.1} MB/s, распаковка...", 
@@ -417,7 +433,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                 return Ok(());
             }
             _ => {
-                let _ = raw_file.flush().await;
+                if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
                 network_error = Some("Неожиданное сообщение при получении файла".to_string());
                 break;
             }
@@ -425,14 +441,17 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     }
     
     // Если вышли из цикла с ошибкой сети - сохраняем файл и ждём распаковщика
-    let _ = raw_file.flush().await;
+    if let Some(ref mut f) = raw_file { let _ = f.flush().await; }
     drop(tx);
     
-    let _ = event_tx.send(TransferEvent::FileReceived(
+    let msg = if save_archive {
         format!("⚠️ Соединение прервано. Сохранено: {:.2} ГБ (можно возобновить)", 
-            received_bytes as f64 / 1024.0 / 1024.0 / 1024.0),
-        received_bytes
-    ));
+            received_bytes as f64 / 1024.0 / 1024.0 / 1024.0)
+    } else {
+        format!("⚠️ Соединение прервано. Получено: {:.2} ГБ", 
+            received_bytes as f64 / 1024.0 / 1024.0 / 1024.0)
+    };
+    let _ = event_tx.send(TransferEvent::FileReceived(msg, received_bytes));
     
     // Ждём завершения распаковщика если он был запущен
     if let Some(handle) = extract_handle {

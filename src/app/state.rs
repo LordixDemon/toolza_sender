@@ -101,6 +101,8 @@ pub struct App {
     pub auto_extract_zip: bool,
     /// Автоматически распаковывать rar архивы (требует unrar)
     pub auto_extract_rar: bool,
+    /// Сохранять архив при потоковой распаковке (для резюме)
+    pub save_archive_for_resume: bool,
     
     // === Общее состояние ===
     pub is_running: bool,
@@ -179,6 +181,7 @@ impl App {
             auto_extract_tar: false,
             auto_extract_zip: false,
             auto_extract_rar: false,
+            save_archive_for_resume: false,
             is_running: false,
             status_message: String::new(),
             log_messages: Vec::new(),

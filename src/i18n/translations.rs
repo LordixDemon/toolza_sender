@@ -56,6 +56,8 @@ pub static RU: Translations = Translations {
     extract_tooltip_tar: "Распаковывать .tar и .tar.gz архивы",
     extract_tooltip_zip: "Распаковывать .zip архивы",
     extract_tooltip_rar: "Распаковывать .rar архивы\n(требует установленный unrar)",
+    save_archive_for_resume: "💾 Сохранять архив (для резюме)",
+    save_archive_tooltip: "Сохранять .tar.lz4 на диск для возможности\nвозобновить при обрыве соединения",
     
     // === История ===
     history_title: "📜 История передач",
@@ -156,6 +158,8 @@ pub static UK: Translations = Translations {
     extract_tooltip_tar: "Розпаковувати .tar та .tar.gz архіви",
     extract_tooltip_zip: "Розпаковувати .zip архіви",
     extract_tooltip_rar: "Розпаковувати .rar архіви\n(потрібен встановлений unrar)",
+    save_archive_for_resume: "💾 Зберігати архів (для резюме)",
+    save_archive_tooltip: "Зберігати .tar.lz4 на диск для можливості\nвідновити при обриві з'єднання",
     
     // === Історія ===
     history_title: "📜 Історія передач",
@@ -256,6 +260,8 @@ pub static EN: Translations = Translations {
     extract_tooltip_tar: "Extract .tar and .tar.gz archives",
     extract_tooltip_zip: "Extract .zip archives",
     extract_tooltip_rar: "Extract .rar archives\n(requires unrar installed)",
+    save_archive_for_resume: "💾 Save archive (for resume)",
+    save_archive_tooltip: "Save .tar.lz4 to disk to allow\nresume on connection failure",
     
     // === History ===
     history_title: "📜 Transfer History",

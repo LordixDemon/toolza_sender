@@ -24,6 +24,8 @@ pub struct ServerOptions {
     pub extract_options: ExtractOptions,
     pub enable_resume: bool,
     pub transport_type: TransportType,
+    /// Сохранять архив при потоковой распаковке (для возможности резюме)
+    pub save_archive_for_resume: bool,
 }
 
 impl Default for ServerOptions {
@@ -32,6 +34,7 @@ impl Default for ServerOptions {
             extract_options: ExtractOptions::default(),
             enable_resume: true,
             transport_type: TransportType::default(),
+            save_archive_for_resume: false, // По умолчанию чистая потоковая распаковка
         }
     }
 }

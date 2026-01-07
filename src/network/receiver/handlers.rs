@@ -97,6 +97,7 @@ pub(crate) async fn handle_client_transport(
                         &filename,
                         size,
                         compressed,
+                        options.save_archive_for_resume,
                         &event_tx,
                         &stop_flag,
                     ).await;
