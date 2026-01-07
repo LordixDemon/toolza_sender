@@ -1,0 +1,30 @@
+# Rust/Cargo
+/target/
+/target2/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+
+# Logs
+*.log
+
+# Local data
+history.json
+
