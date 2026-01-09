@@ -8,6 +8,7 @@ pub static RU: Translations = Translations {
     app_title: "Toolza Sender",
     mode_send: "Отправка",
     mode_receive: "Приём",
+    mode_extract: "Распаковка",
     mode_history: "История",
     mode_speedtest: "Спидтест",
     
@@ -102,6 +103,15 @@ pub static RU: Translations = Translations {
     udp_description: "Быстрый, без гарантий доставки (для тестов)",
     quic_description: "Быстрый с шифрованием (UDP)",
     kcp_description: "Сверхбыстрый, низкая задержка (UDP)",
+    
+    // === Распаковка ===
+    extract_title: "📦 Распаковка архивов",
+    select_archive: "📂 Выбрать архив",
+    extract_destination: "Папка назначения:",
+    start_extraction: "🚀 Распаковать",
+    no_archive_selected: "Не выбран архив",
+    archive_path: "Архив:",
+    supported_formats: "Поддерживаемые форматы: .tar.lz4, .lz4, .tar, .tar.gz, .zip, .rar, .7z",
 };
 
 /// Українська мова
@@ -110,6 +120,7 @@ pub static UK: Translations = Translations {
     app_title: "Toolza Sender",
     mode_send: "Надсилання",
     mode_receive: "Прийом",
+    mode_extract: "Розпакування",
     mode_history: "Історія",
     mode_speedtest: "Спідтест",
     
@@ -204,6 +215,15 @@ pub static UK: Translations = Translations {
     udp_description: "Швидкий, без гарантій доставки (для тестів)",
     quic_description: "Швидкий з шифруванням (UDP)",
     kcp_description: "Надшвидкий, низька затримка (UDP)",
+    
+    // === Розпакування ===
+    extract_title: "📦 Розпакування архівів",
+    select_archive: "📂 Вибрати архів",
+    extract_destination: "Тека призначення:",
+    start_extraction: "🚀 Розпакувати",
+    no_archive_selected: "Не вибрано архів",
+    archive_path: "Архів:",
+    supported_formats: "Підтримувані формати: .tar.lz4, .lz4, .tar, .tar.gz, .zip, .rar, .7z",
 };
 
 /// English language
@@ -212,6 +232,7 @@ pub static EN: Translations = Translations {
     app_title: "Toolza Sender",
     mode_send: "Send",
     mode_receive: "Receive",
+    mode_extract: "Extract",
     mode_history: "History",
     mode_speedtest: "Speedtest",
     
@@ -306,5 +327,14 @@ pub static EN: Translations = Translations {
     udp_description: "Fast, no delivery guarantee (for testing)",
     quic_description: "Fast with encryption (UDP)",
     kcp_description: "Ultra-fast, low latency (UDP)",
+    
+    // === Extract ===
+    extract_title: "📦 Archive Extraction",
+    select_archive: "📂 Select Archive",
+    extract_destination: "Destination folder:",
+    start_extraction: "🚀 Extract",
+    no_archive_selected: "No archive selected",
+    archive_path: "Archive:",
+    supported_formats: "Supported formats: .tar.lz4, .lz4, .tar, .tar.gz, .zip, .rar, .7z",
 };
 

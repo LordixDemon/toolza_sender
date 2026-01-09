@@ -2,6 +2,7 @@
 
 mod send_view;
 mod receive_view;
+mod extract_view;
 mod history_view;
 mod speedtest_view;
 mod widgets;
@@ -102,6 +103,7 @@ impl App {
                 
                 ui.selectable_value(&mut self.mode, Mode::Send, format!("📤 {}", t.mode_send));
                 ui.selectable_value(&mut self.mode, Mode::Receive, format!("📥 {}", t.mode_receive));
+                ui.selectable_value(&mut self.mode, Mode::Extract, format!("📦 {}", t.mode_extract));
                 ui.selectable_value(&mut self.mode, Mode::SpeedTest, format!("🚀 {}", t.mode_speedtest));
                 ui.selectable_value(&mut self.mode, Mode::History, format!("📊 {}", t.mode_history));
                 
@@ -201,6 +203,7 @@ impl App {
             match self.mode {
                 Mode::Send => self.render_send_mode(ui),
                 Mode::Receive => self.render_receive_mode(ui),
+                Mode::Extract => self.render_extract_mode(ui),
                 Mode::SpeedTest => self.render_speedtest_mode(ui),
                 Mode::History => self.render_history_mode(ui),
             }

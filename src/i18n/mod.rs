@@ -56,6 +56,7 @@ pub struct Translations {
     pub app_title: &'static str,
     pub mode_send: &'static str,
     pub mode_receive: &'static str,
+    pub mode_extract: &'static str,
     pub mode_history: &'static str,
     pub mode_speedtest: &'static str,
     
@@ -150,6 +151,15 @@ pub struct Translations {
     pub udp_description: &'static str,
     pub quic_description: &'static str,
     pub kcp_description: &'static str,
+    
+    // === Распаковка ===
+    pub extract_title: &'static str,
+    pub select_archive: &'static str,
+    pub extract_destination: &'static str,
+    pub start_extraction: &'static str,
+    pub no_archive_selected: &'static str,
+    pub archive_path: &'static str,
+    pub supported_formats: &'static str,
 }
 
 impl Translations {

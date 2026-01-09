@@ -18,6 +18,9 @@ pub enum DialogResult {
     Files(Vec<PathBuf>),
     Folder(PathBuf),
     SaveDirectory(PathBuf),
+    ArchiveFile(PathBuf),
+    ExtractDestination(PathBuf),
+    ExtractComplete(String),
 }
 
 /// Режим работы приложения
@@ -25,6 +28,7 @@ pub enum DialogResult {
 pub enum Mode {
     Send,
     Receive,
+    Extract,
     History,
     SpeedTest,
 }
@@ -138,6 +142,16 @@ pub struct App {
     pub speedtest_direction: String,
     pub speedtest_result: Option<toolza_sender::network::SpeedTestResult>,
     
+    // === Локальная распаковка ===
+    /// Путь к архиву для распаковки
+    pub extract_archive_path: Option<PathBuf>,
+    /// Папка назначения для распаковки
+    pub extract_destination: PathBuf,
+    /// Идёт распаковка
+    pub extract_running: bool,
+    /// Результат распаковки (кол-во файлов, размер)
+    pub extract_result: Option<String>,
+    
     // === Runtime ===
     pub runtime: tokio::runtime::Runtime,
     pub event_rx: Option<mpsc::UnboundedReceiver<TransferEvent>>,
@@ -174,7 +188,7 @@ impl App {
             sync_mode: false,
             transport_type: TransportType::default(),
             listen_port: DEFAULT_PORT.to_string(),
-            save_directory: save_dir,
+            save_directory: save_dir.clone(),
             received_files: Vec::new(),
             auto_extract_tar_lz4: false,
             auto_extract_lz4: false,
@@ -201,6 +215,10 @@ impl App {
             speedtest_progress: 0,
             speedtest_direction: String::new(),
             speedtest_result: None,
+            extract_archive_path: None,
+            extract_destination: save_dir,
+            extract_running: false,
+            extract_result: None,
             runtime: tokio::runtime::Runtime::new().unwrap(),
             event_rx: None,
             stop_flag: Arc::new(AtomicBool::new(false)),

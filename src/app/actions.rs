@@ -4,6 +4,7 @@ use super::state::{App, DialogResult, TargetInfo};
 use std::sync::atomic::Ordering;
 use toolza_sender::network;
 use toolza_sender::protocol::{FileInfo, FileStatus, collect_files_from_folder};
+use toolza_sender::utils::format_size;
 use tokio::sync::mpsc;
 
 impl App {
@@ -115,8 +116,90 @@ impl App {
                 DialogResult::SaveDirectory(path) => {
                     self.save_directory = path;
                 }
+                DialogResult::ArchiveFile(path) => {
+                    self.extract_archive_path = Some(path);
+                    self.extract_result = None;
+                }
+                DialogResult::ExtractDestination(path) => {
+                    self.extract_destination = path;
+                }
+                DialogResult::ExtractComplete(result) => {
+                    self.extract_running = false;
+                    self.extract_result = Some(result.clone());
+                    self.status_message = result.clone();
+                    self.log(result);
+                }
             }
         }
+    }
+    
+    // === Локальная распаковка ===
+    
+    /// Выбрать архив для распаковки
+    pub fn select_archive_dialog(&mut self) {
+        let tx = self.dialog_tx.clone();
+        std::thread::spawn(move || {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Выберите архив для распаковки")
+                .add_filter("Archives", &["tar.lz4", "tlz4", "lz4", "tar", "tar.gz", "tgz", "zip", "rar", "7z"])
+                .add_filter("All files", &["*"])
+                .pick_file()
+            {
+                let _ = tx.send(DialogResult::ArchiveFile(path));
+            }
+        });
+    }
+    
+    /// Выбрать папку назначения для распаковки
+    pub fn select_extract_destination_dialog(&mut self) {
+        let tx = self.dialog_tx.clone();
+        std::thread::spawn(move || {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Выберите папку для распаковки")
+                .pick_folder()
+            {
+                let _ = tx.send(DialogResult::ExtractDestination(path));
+            }
+        });
+    }
+    
+    /// Запустить локальную распаковку
+    pub fn start_local_extraction(&mut self) {
+        let archive_path = match &self.extract_archive_path {
+            Some(p) => p.clone(),
+            None => {
+                self.extract_result = Some("❌ Не выбран архив".to_string());
+                return;
+            }
+        };
+        
+        let output_dir = self.extract_destination.clone();
+        
+        self.extract_running = true;
+        self.extract_result = None;
+        
+        let archive_name = archive_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "архив".to_string());
+        
+        self.status_message = format!("📦 Распаковка {}...", archive_name);
+        self.log(format!("Распаковка: {} → {}", archive_path.display(), output_dir.display()));
+        
+        let tx = self.dialog_tx.clone();
+        
+        // Запускаем распаковку в отдельном потоке
+        std::thread::spawn(move || {
+            let result_msg = match toolza_sender::extract::extract_archive(&archive_path, &output_dir) {
+                Ok(result) => {
+                    format!("✅ Распаковано: {} файлов, {}", 
+                        result.files_count, format_size(result.total_size))
+                }
+                Err(e) => {
+                    format!("❌ Ошибка: {}", e)
+                }
+            };
+            let _ = tx.send(DialogResult::ExtractComplete(result_msg));
+        });
     }
     
     /// Удалить файл
