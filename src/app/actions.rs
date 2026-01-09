@@ -175,6 +175,9 @@ impl App {
         
         let output_dir = self.extract_destination.clone();
         
+        // Сбрасываем флаг остановки
+        self.extract_stop_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        
         self.extract_running = true;
         self.extract_result = None;
         
@@ -183,16 +186,24 @@ impl App {
             .unwrap_or_else(|| "архив".to_string());
         
         self.status_message = format!("📦 Распаковка {}...", archive_name);
-        self.log(format!("Распаковка: {} → {}", archive_path.display(), output_dir.display()));
+        self.log(format!("Распаковка (потоковая): {} → {}", archive_path.display(), output_dir.display()));
         
         let tx = self.dialog_tx.clone();
+        let stop_flag = self.extract_stop_flag.clone();
         
-        // Запускаем распаковку в отдельном потоке
+        // Запускаем распаковку в отдельном потоке (потоковая, не грузит в RAM)
         std::thread::spawn(move || {
-            let result_msg = match toolza_sender::extract::extract_archive(&archive_path, &output_dir) {
+            let result_msg = match toolza_sender::extract::extract_archive_streaming(
+                &archive_path, 
+                &output_dir,
+                Some(stop_flag)
+            ) {
                 Ok(result) => {
                     format!("✅ Распаковано: {} файлов, {}", 
                         result.files_count, format_size(result.total_size))
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                    "⏹ Распаковка отменена".to_string()
                 }
                 Err(e) => {
                     format!("❌ Ошибка: {}", e)
@@ -200,6 +211,12 @@ impl App {
             };
             let _ = tx.send(DialogResult::ExtractComplete(result_msg));
         });
+    }
+    
+    /// Остановить распаковку
+    pub fn stop_extraction(&mut self) {
+        self.extract_stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.status_message = "⏹ Остановка распаковки...".to_string();
     }
     
     /// Удалить файл

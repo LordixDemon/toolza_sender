@@ -151,6 +151,8 @@ pub struct App {
     pub extract_running: bool,
     /// Результат распаковки (кол-во файлов, размер)
     pub extract_result: Option<String>,
+    /// Флаг остановки распаковки
+    pub extract_stop_flag: Arc<AtomicBool>,
     
     // === Runtime ===
     pub runtime: tokio::runtime::Runtime,
@@ -219,6 +221,7 @@ impl App {
             extract_destination: save_dir,
             extract_running: false,
             extract_result: None,
+            extract_stop_flag: Arc::new(AtomicBool::new(false)),
             runtime: tokio::runtime::Runtime::new().unwrap(),
             event_rx: None,
             stop_flag: Arc::new(AtomicBool::new(false)),

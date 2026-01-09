@@ -11,12 +11,14 @@ mod lz4;
 mod zip;
 
 pub use types::{ArchiveType, ExtractResult, ExtractOptions};
-pub use tar::{extract_tar, extract_tar_gz};
-pub use lz4::{extract_lz4, extract_tar_lz4, extract_tar_lz4_simple};
+pub use tar::{extract_tar, extract_tar_gz, extract_tar_streaming, extract_tar_gz_streaming};
+pub use lz4::{extract_lz4, extract_lz4_streaming, extract_tar_lz4, extract_tar_lz4_streaming, extract_tar_lz4_simple};
 pub use zip::extract_zip;
 
 use std::io;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Проверить, является ли файл tar.lz4 архивом
 pub fn is_tar_lz4(filename: &str) -> bool {
@@ -30,16 +32,25 @@ pub fn is_archive(filename: &str) -> bool {
 
 /// Распаковать архив в указанную папку (автоопределение типа)
 pub fn extract_archive(archive_path: &Path, output_dir: &Path) -> io::Result<ExtractResult> {
+    extract_archive_streaming(archive_path, output_dir, None)
+}
+
+/// Распаковать архив с поддержкой остановки (потоковая версия)
+pub fn extract_archive_streaming(
+    archive_path: &Path, 
+    output_dir: &Path,
+    stop_flag: Option<Arc<AtomicBool>>
+) -> io::Result<ExtractResult> {
     let filename = archive_path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("");
     
     match ArchiveType::from_filename(filename) {
-        ArchiveType::TarLz4 => extract_tar_lz4(archive_path, output_dir),
-        ArchiveType::Lz4 => extract_lz4(archive_path, output_dir),
-        ArchiveType::Tar => extract_tar(archive_path, output_dir),
-        ArchiveType::TarGz => extract_tar_gz(archive_path, output_dir),
-        ArchiveType::Zip => extract_zip(archive_path, output_dir),
+        ArchiveType::TarLz4 => extract_tar_lz4_streaming(archive_path, output_dir, stop_flag),
+        ArchiveType::Lz4 => extract_lz4_streaming(archive_path, output_dir, stop_flag),
+        ArchiveType::Tar => extract_tar_streaming(archive_path, output_dir, stop_flag),
+        ArchiveType::TarGz => extract_tar_gz_streaming(archive_path, output_dir, stop_flag),
+        ArchiveType::Zip => extract_zip(archive_path, output_dir), // zip не имеет streaming версии пока
         ArchiveType::Rar => Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "RAR распаковка требует внешнего unrar. Используйте: unrar x archive.rar"

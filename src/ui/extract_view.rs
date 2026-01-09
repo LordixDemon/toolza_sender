@@ -66,16 +66,21 @@ impl App {
         ui.separator();
         ui.add_space(10.0);
         
-        // === Кнопка распаковки ===
-        let can_extract = self.extract_archive_path.is_some() && !self.extract_running;
-        
+        // === Кнопки распаковки/остановки ===
         ui.horizontal(|ui| {
-            if ui.add_enabled(can_extract, egui::Button::new(t.start_extraction)).clicked() {
-                self.start_local_extraction();
-            }
-            
             if self.extract_running {
+                // Кнопка остановки
+                if ui.button(t.stop).clicked() {
+                    self.stop_extraction();
+                }
                 ui.spinner();
+                ui.label(egui::RichText::new("Распаковка...").color(egui::Color32::YELLOW));
+            } else {
+                // Кнопка распаковки
+                let can_extract = self.extract_archive_path.is_some();
+                if ui.add_enabled(can_extract, egui::Button::new(t.start_extraction)).clicked() {
+                    self.start_local_extraction();
+                }
             }
         });
         
