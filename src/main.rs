@@ -19,6 +19,10 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Toolza Sender - Передача файлов",
         options,
-        Box::new(|_cc| Ok(Box::new(App::new()))),
+        Box::new(|cc| {
+            // Принудительно тёмная тема
+            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            Ok(Box::new(App::new()))
+        }),
     )
 }
