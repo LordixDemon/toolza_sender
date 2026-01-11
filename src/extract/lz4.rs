@@ -3,10 +3,15 @@
 use super::types::ExtractResult;
 use lz4_flex::frame::FrameDecoder;
 use std::fs::{self, File};
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Размер буфера чтения (64 МБ)
+const READ_BUFFER_SIZE: usize = 64 * 1024 * 1024;
+/// Размер чанка записи (4 МБ)
+const WRITE_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 
 /// Распаковать обычный .lz4 файл (не архив) - потоковая распаковка
 pub fn extract_lz4(archive_path: &Path, output_dir: &Path) -> io::Result<ExtractResult> {
@@ -36,12 +41,13 @@ pub fn extract_lz4_streaming(
     }
     
     let file = File::open(archive_path)?;
-    let reader = BufReader::with_capacity(1024 * 1024, file);
+    let reader = BufReader::with_capacity(READ_BUFFER_SIZE, file);
     let mut decoder = FrameDecoder::new(reader);
     
-    let mut output_file = File::create(&output_path)?;
+    let output_file = File::create(&output_path)?;
+    let mut writer = BufWriter::with_capacity(READ_BUFFER_SIZE, output_file);
     let mut total_size = 0u64;
-    let mut buffer = vec![0u8; 256 * 1024]; // 256KB chunks
+    let mut buffer = vec![0u8; WRITE_CHUNK_SIZE];
     
     loop {
         // Проверяем флаг остановки
@@ -61,9 +67,11 @@ pub fn extract_lz4_streaming(
             break;
         }
         
-        output_file.write_all(&buffer[..bytes_read])?;
+        writer.write_all(&buffer[..bytes_read])?;
         total_size += bytes_read as u64;
     }
+    
+    writer.flush()?;
     
     Ok(ExtractResult {
         files_count: 1,
@@ -83,7 +91,7 @@ pub fn extract_tar_lz4_streaming(
     stop_flag: Option<Arc<AtomicBool>>
 ) -> io::Result<ExtractResult> {
     let file = File::open(archive_path)?;
-    let reader = BufReader::with_capacity(1024 * 1024, file); // 1MB буфер
+    let reader = BufReader::with_capacity(READ_BUFFER_SIZE, file); // 64MB буфер
     
     // LZ4 FrameDecoder работает потоково - не грузит всё в RAM
     let decoder = FrameDecoder::new(reader);

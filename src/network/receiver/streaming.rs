@@ -160,9 +160,9 @@ pub(crate) fn extract_from_channel_zst(
     // Создаём reader из канала
     let channel_reader = ChannelReader::new(rx);
     
-    // Обёртываем в BufReader для лучшей производительности
+    // Обёртываем в BufReader для лучшей производительности (64MB буфер)
     use std::io::BufReader;
-    let buffered_reader = BufReader::with_capacity(1024 * 1024, channel_reader); // 1MB буфер
+    let buffered_reader = BufReader::with_capacity(64 * 1024 * 1024, channel_reader);
     
     // ZST decoder поверх buffered reader
     // Используем DecoderBuilder для настройки лимита памяти для больших фреймов
