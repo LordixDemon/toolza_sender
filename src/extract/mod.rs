@@ -1,18 +1,20 @@
 //! Модуль распаковки архивов
 //!
 //! Поддерживаемые форматы:
-//! - tar.lz4, lz4
+//! - tar.lz4, tar.zst, lz4
 //! - tar, tar.gz
 //! - zip
 
 mod types;
 mod tar;
 mod lz4;
+mod zst;
 mod zip;
 
 pub use types::{ArchiveType, ExtractResult, ExtractOptions};
 pub use tar::{extract_tar, extract_tar_gz, extract_tar_streaming, extract_tar_gz_streaming};
 pub use lz4::{extract_lz4, extract_lz4_streaming, extract_tar_lz4, extract_tar_lz4_streaming, extract_tar_lz4_simple};
+pub use zst::{extract_tar_zst, extract_tar_zst_streaming, extract_tar_zst_simple};
 pub use zip::extract_zip;
 
 use std::io;
@@ -47,6 +49,7 @@ pub fn extract_archive_streaming(
     
     match ArchiveType::from_filename(filename) {
         ArchiveType::TarLz4 => extract_tar_lz4_streaming(archive_path, output_dir, stop_flag),
+        ArchiveType::TarZst => extract_tar_zst_streaming(archive_path, output_dir, stop_flag),
         ArchiveType::Lz4 => extract_lz4_streaming(archive_path, output_dir, stop_flag),
         ArchiveType::Tar => extract_tar_streaming(archive_path, output_dir, stop_flag),
         ArchiveType::TarGz => extract_tar_gz_streaming(archive_path, output_dir, stop_flag),

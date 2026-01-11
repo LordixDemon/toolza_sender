@@ -148,6 +148,78 @@ pub(crate) fn extract_from_channel(
     Ok(())
 }
 
+/// Распаковка tar.zst из канала (потоковая, без буферизации всего файла)
+pub(crate) fn extract_from_channel_zst(
+    rx: std_mpsc::Receiver<Vec<u8>>,
+    output_dir: &PathBuf,
+    filename: &str,
+    event_tx: &mpsc::UnboundedSender<TransferEvent>,
+) -> Result<(), String> {
+    use std::fs::{self, File};
+    
+    // Создаём reader из канала
+    let channel_reader = ChannelReader::new(rx);
+    
+    // ZST decoder поверх channel reader
+    let zst_reader = zstd::stream::Decoder::new(channel_reader)
+        .map_err(|e| format!("Ошибка создания ZST декодера: {}", e))?;
+    
+    // Tar archive поверх ZST decoder
+    let mut archive = tar::Archive::new(zst_reader);
+    
+    let mut files_count = 0usize;
+    let mut total_size = 0u64;
+    
+    // Читаем и распаковываем файлы по одному - ПОТОКОВО!
+    for entry_result in archive.entries().map_err(|e| format!("Ошибка чтения tar: {}", e))? {
+        let mut entry = entry_result.map_err(|e| format!("Ошибка записи tar: {}", e))?;
+        
+        let path = entry.path()
+            .map_err(|e| format!("Ошибка пути: {}", e))?
+            .to_path_buf();
+        let full_path = output_dir.join(&path);
+        
+        if entry.header().entry_type().is_dir() {
+            fs::create_dir_all(&full_path)
+                .map_err(|e| format!("Ошибка создания папки: {}", e))?;
+        } else if entry.header().entry_type().is_file() {
+            // Создаём родительскую директорию
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Ошибка создания папки: {}", e))?;
+            }
+            
+            // Получаем размер до распаковки
+            let size = entry.header().size().unwrap_or(0);
+            
+            // Распаковываем файл напрямую на диск - ПОТОКОВО!
+            let mut file = File::create(&full_path)
+                .map_err(|e| format!("Ошибка создания файла: {}", e))?;
+            
+            std::io::copy(&mut entry, &mut file)
+                .map_err(|e| format!("Ошибка записи файла: {}", e))?;
+            
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = entry.header().mode().unwrap_or(0o644);
+                let _ = fs::set_permissions(&full_path, fs::Permissions::from_mode(mode));
+            }
+            
+            files_count += 1;
+            total_size += size;
+        }
+    }
+    
+    let _ = event_tx.send(TransferEvent::ExtractionCompleted(
+        filename.to_string(),
+        files_count,
+        total_size,
+    ));
+    
+    Ok(())
+}
+
 /// ИСТИННАЯ потоковая распаковка tar.lz4 через транспорт с поддержкой резюме
 pub(crate) async fn receive_and_extract_streaming_transport(
     stream: &mut dyn TransportStream,
@@ -224,9 +296,17 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     let event_tx_clone = event_tx.clone();
     let filename_clone = filename.to_string();
     
+    // Определяем тип архива для выбора правильной функции распаковки
+    let archive_type = crate::extract::ArchiveType::from_filename(filename);
+    let is_tar_zst = archive_type == crate::extract::ArchiveType::TarZst;
+    
     let extract_handle = if streaming_extract {
         Some(std::thread::spawn(move || {
-            extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+            if is_tar_zst {
+                extract_from_channel_zst(rx, &output_dir, &filename_clone, &event_tx_clone)
+            } else {
+                extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+            }
         }))
     } else {
         drop(rx); // Не используем канал при резюме
@@ -237,6 +317,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     let mut received_bytes = resume_offset;
     let start_time = Instant::now();
     let mut last_progress_update = Instant::now();
+    #[allow(unused_assignments)]
     let mut network_error: Option<String> = None;
     
     loop {
@@ -491,14 +572,23 @@ pub(crate) async fn receive_and_extract_streaming_tcp(
     let event_tx_clone = event_tx.clone();
     let filename_clone = filename.to_string();
     
+    // Определяем тип архива для выбора правильной функции распаковки
+    let archive_type = crate::extract::ArchiveType::from_filename(&filename);
+    let is_tar_zst = archive_type == crate::extract::ArchiveType::TarZst;
+    
     let extract_handle = std::thread::spawn(move || {
-        extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+        if is_tar_zst {
+            extract_from_channel_zst(rx, &output_dir, &filename_clone, &event_tx_clone)
+        } else {
+            extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+        }
     });
     
     // Читаем данные из сети и отправляем в канал
     let mut received_bytes = 0u64;
     let start_time = Instant::now();
     let mut last_progress_update = Instant::now();
+    #[allow(unused_assignments)]
     let mut network_error: Option<String> = None;
     
     loop {

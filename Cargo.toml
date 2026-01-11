@@ -42,7 +42,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # File dialog
-rfd = "0.15"
+rfd = "0.17"
 
 # Cross-platform utilities
 dirs = "5.0"
@@ -60,6 +60,7 @@ lz4_flex = "0.11"
 tar = "0.4"
 zip = "2.2"
 flate2 = "1.0"  # для tar.gz
+zstd = "0.13"  # для tar.zst
 
 # Parallel processing
 rayon = "1.10"
