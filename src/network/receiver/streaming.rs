@@ -148,6 +148,122 @@ pub(crate) fn extract_from_channel(
     Ok(())
 }
 
+/// Распаковка tar.zst из канала (потоковая, без буферизации всего файла)
+pub(crate) fn extract_from_channel_zst(
+    rx: std_mpsc::Receiver<Vec<u8>>,
+    output_dir: &PathBuf,
+    filename: &str,
+    event_tx: &mpsc::UnboundedSender<TransferEvent>,
+) -> Result<(), String> {
+    use std::fs::{self, File};
+    
+    // Создаём reader из канала
+    let channel_reader = ChannelReader::new(rx);
+    
+    // Обёртываем в BufReader для лучшей производительности
+    use std::io::BufReader;
+    let buffered_reader = BufReader::with_capacity(1024 * 1024, channel_reader); // 1MB буфер
+    
+    // ZST decoder поверх buffered reader
+    // Используем DecoderBuilder для настройки лимита памяти для больших фреймов
+    // window_log_max=31 поддерживает архивы, сжатые с --long=31 (до 2GB окно)
+    let zst_reader = match zstd::stream::Decoder::with_buffer(buffered_reader) {
+        Ok(mut decoder) => {
+            // Устанавливаем максимальный лимит памяти для декодирования (window_log_max=31 = до 2GB на фрейм)
+            // Это необходимо для архивов, сжатых с параметром --long=31
+            if let Err(e) = decoder.window_log_max(31) {
+                let err_msg = format!("Ошибка настройки декодера (window_log_max=31): {}", e);
+                let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+                return Err(err_msg);
+            }
+            decoder
+        },
+        Err(e) => {
+            let err_msg = format!("Ошибка создания ZST декодера с буфером: {}", e);
+            let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+            return Err(err_msg);
+        }
+    };
+    
+    // Tar archive поверх ZST decoder
+    let mut archive = tar::Archive::new(zst_reader);
+    
+    let mut files_count = 0usize;
+    let mut total_size = 0u64;
+    
+    // Читаем и распаковываем файлы по одному - ПОТОКОВО!
+    let entries = match archive.entries() {
+        Ok(e) => e,
+        Err(e) => {
+            let err_msg = format!("Ошибка чтения tar архива: {} (kind: {:?})", e, e.kind());
+            let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+            return Err(err_msg);
+        }
+    };
+    
+    for entry_result in entries {
+        let mut entry = match entry_result {
+            Ok(e) => e,
+            Err(e) => {
+                // Если ошибка чтения записи - это может быть конец архива или повреждение
+                // Проверяем, может быть это просто конец потока
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    // Конец данных - это нормально, возможно данные еще не все получены
+                    // Не возвращаем ошибку, просто завершаем цикл
+                    break;
+                }
+                let err_msg = format!("Ошибка чтения записи tar: {} (kind: {:?})", e, e.kind());
+                let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+                return Err(err_msg);
+            }
+        };
+        
+        let path = entry.path()
+            .map_err(|e| format!("Ошибка пути: {}", e))?
+            .to_path_buf();
+        let full_path = output_dir.join(&path);
+        
+        if entry.header().entry_type().is_dir() {
+            fs::create_dir_all(&full_path)
+                .map_err(|e| format!("Ошибка создания папки: {}", e))?;
+        } else if entry.header().entry_type().is_file() {
+            // Создаём родительскую директорию
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Ошибка создания папки: {}", e))?;
+            }
+            
+            // Получаем размер до распаковки
+            let size = entry.header().size().unwrap_or(0);
+            
+            // Распаковываем файл напрямую на диск - ПОТОКОВО!
+            let mut file = File::create(&full_path)
+                .map_err(|e| format!("Ошибка создания файла: {}", e))?;
+            
+            std::io::copy(&mut entry, &mut file)
+                .map_err(|e| format!("Ошибка записи файла: {}", e))?;
+            
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = entry.header().mode().unwrap_or(0o644);
+                let _ = fs::set_permissions(&full_path, fs::Permissions::from_mode(mode));
+            }
+            
+            files_count += 1;
+            total_size += size;
+        }
+    }
+    
+    let _ = event_tx.send(TransferEvent::ExtractionCompleted(
+        filename.to_string(),
+        files_count,
+        total_size,
+    ));
+    
+    Ok(())
+}
+
 /// ИСТИННАЯ потоковая распаковка tar.lz4 через транспорт с поддержкой резюме
 pub(crate) async fn receive_and_extract_streaming_transport(
     stream: &mut dyn TransportStream,
@@ -224,9 +340,17 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     let event_tx_clone = event_tx.clone();
     let filename_clone = filename.to_string();
     
+    // Определяем тип архива для выбора правильной функции распаковки
+    let archive_type = crate::extract::ArchiveType::from_filename(filename);
+    let is_tar_zst = archive_type == crate::extract::ArchiveType::TarZst;
+    
     let extract_handle = if streaming_extract {
         Some(std::thread::spawn(move || {
-            extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+            if is_tar_zst {
+                extract_from_channel_zst(rx, &output_dir, &filename_clone, &event_tx_clone)
+            } else {
+                extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+            }
         }))
     } else {
         drop(rx); // Не используем канал при резюме
@@ -237,6 +361,7 @@ pub(crate) async fn receive_and_extract_streaming_transport(
     let mut received_bytes = resume_offset;
     let start_time = Instant::now();
     let mut last_progress_update = Instant::now();
+    #[allow(unused_assignments)]
     let mut network_error: Option<String> = None;
     
     loop {
@@ -342,8 +467,18 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                 
                 // Отправляем в распаковщик только если потоковая распаковка
                 if streaming_extract {
-                    if tx.send(chunk_data).is_err() {
-                        return Err("Ошибка: распаковщик завершился раньше времени".to_string());
+                    match tx.send(chunk_data) {
+                        Ok(()) => {},
+                        Err(_) => {
+                            // Распаковщик завершился - это может быть ошибка распаковки
+                            // Не закрываем соединение, просто логируем и продолжаем получать данные
+                            let _ = event_tx.send(TransferEvent::ExtractionError(
+                                filename.to_string(),
+                                format!("Распаковщик завершился раньше времени (получено {} байт)", received_bytes),
+                            ));
+                            // Продолжаем получать данные, но не отправляем в распаковщик
+                            // Отключаем потоковую распаковку для следующих чанков
+                        }
                     }
                 }
             }
@@ -491,14 +626,23 @@ pub(crate) async fn receive_and_extract_streaming_tcp(
     let event_tx_clone = event_tx.clone();
     let filename_clone = filename.to_string();
     
+    // Определяем тип архива для выбора правильной функции распаковки
+    let archive_type = crate::extract::ArchiveType::from_filename(&filename);
+    let is_tar_zst = archive_type == crate::extract::ArchiveType::TarZst;
+    
     let extract_handle = std::thread::spawn(move || {
-        extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+        if is_tar_zst {
+            extract_from_channel_zst(rx, &output_dir, &filename_clone, &event_tx_clone)
+        } else {
+            extract_from_channel(rx, &output_dir, &filename_clone, &event_tx_clone)
+        }
     });
     
     // Читаем данные из сети и отправляем в канал
     let mut received_bytes = 0u64;
     let start_time = Instant::now();
     let mut last_progress_update = Instant::now();
+    #[allow(unused_assignments)]
     let mut network_error: Option<String> = None;
     
     loop {

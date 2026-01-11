@@ -336,11 +336,19 @@ impl App {
     fn on_extraction_completed(&mut self, name: String, files_count: usize, total_size: u64) {
         self.status_message = "Ожидание подключений...".to_string();
         self.log(format!("✅ Распаковано {}: {} файл(ов), {}", name, files_count, format_size(total_size)));
+        // Обновляем финальное состояние окна
+        self.extraction_files_count = files_count;
+        self.extraction_total_size = total_size;
+        self.extraction_current_file = String::new();
+        // Закрываем окно через небольшую задержку (можно закрыть сразу или через таймер)
+        // Пока оставим открытым, чтобы пользователь видел результат
     }
     
     fn on_extraction_error(&mut self, name: String, err: String) {
         self.status_message = "Ожидание подключений...".to_string();
         self.log(format!("❌ Ошибка распаковки {}: {}", name, err));
+        // Закрываем окно при ошибке
+        self.extraction_window_open = false;
     }
     
     // === Обработчики событий сканирования ===

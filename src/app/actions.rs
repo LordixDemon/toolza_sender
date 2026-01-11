@@ -353,6 +353,7 @@ impl App {
         // Формируем строку с включёнными форматами
         let mut extract_formats = Vec::new();
         if self.auto_extract_tar_lz4 { extract_formats.push("tar.lz4"); }
+        if self.auto_extract_tar_zst { extract_formats.push("tar.zst"); }
         if self.auto_extract_lz4 { extract_formats.push("lz4"); }
         if self.auto_extract_tar { extract_formats.push("tar"); }
         if self.auto_extract_zip { extract_formats.push("zip"); }
@@ -370,6 +371,7 @@ impl App {
         let options = network::ServerOptions {
             extract_options: network::ExtractOptions {
                 tar_lz4: self.auto_extract_tar_lz4,
+                tar_zst: self.auto_extract_tar_zst,
                 lz4: self.auto_extract_lz4,
                 tar: self.auto_extract_tar,
                 zip: self.auto_extract_zip,

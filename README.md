@@ -1,17 +1,32 @@
 # 🚀 Toolza Sender
 
-![Rust](https://img.shields.io/badge/Rust-1.70+-orange?logo=rust)
+<div align="center">
+
+![Rust](https://img.shields.io/badge/Rust-1.75+-orange?logo=rust&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/Tests-115%20passed-brightgreen)
-![Coverage](https://img.shields.io/badge/Coverage-41%25-yellow)
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
-![Protocols](https://img.shields.io/badge/Protocols-TCP%20%7C%20UDP%20%7C%20QUIC%20%7C%20KCP-purple)
 
-**Fast file transfer over local network** — a modern netcat alternative with GUI.
+**⚡ Быстрая передача файлов по локальной сети**
 
-> ✅ **Tested on:** Windows 10/11, Linux (Ubuntu, Arch)  
-> ⚠️ **macOS:** Should work, not fully tested
+*Современная альтернатива netcat с GUI и потоковой распаковкой архивов*
+
+[🇬🇧 English](#-english) • [🇷🇺 Русский](#-русский)
+
+</div>
+
+---
+
+## 🎯 Ключевые особенности
+
+| Возможность | Описание |
+|-------------|----------|
+| 🔥 **4 протокола** | TCP, UDP, QUIC (шифрованный), KCP (сверхбыстрый) |
+| 📦 **Потоковая распаковка** | tar.lz4, tar.zst — распаковка на лету без загрузки в RAM |
+| 🗜️ **LZ4 сжатие** | Ускорение передачи текстовых файлов |
+| 👥 **Мульти-отправка** | Одновременная отправка на несколько компьютеров |
+| 🔄 **Докачка** | Автоматическое возобновление прерванных передач |
+| 🌍 **Мультиязычность** | Русский, Украинский, Английский |
 
 ---
 
@@ -19,167 +34,122 @@
 
 ## What is this?
 
-A program for **quickly transferring files between computers** on the same network. Works like this:
+A program for **quickly transferring files between computers** on the same network:
 
-1. **Computer A** (receiver) starts the server
-2. **Computer B** (sender) connects and sends files
-3. Done! Files appear on Computer A
+```
+┌─────────────────┐         ┌─────────────────┐
+│   Computer A    │         │   Computer B    │
+│   (Receiver)    │◄────────│    (Sender)     │
+│   Server mode   │  files  │   Client mode   │
+└─────────────────┘         └─────────────────┘
+```
 
-## Quick Start (5 minutes)
+## Quick Start
 
-### Step 1: Download or Build
+### 1️⃣ Build
 
 ```bash
-# Clone the repository
 git clone https://github.com/LordixDemon/toolza_sender.git
 cd toolza_sender
-
-# Build (requires Rust installed)
 cargo build --release
 ```
 
-Binaries will be in `target/release/`:
-- `toolza_sender` — GUI version (with buttons and windows)
-- `toolza_cli` — Terminal version (for servers or advanced users)
+**Binaries in `target/release/`:**
+- `toolza_sender` — GUI version
+- `toolza_cli` — Terminal version
 
-### Step 2: Receive Files (Computer A)
+### 2️⃣ Receive Files (Computer A)
 
-**GUI:**
-1. Run `toolza_sender`
-2. Click "📥 Receive" in the left menu
-3. Click "▶ Start Server"
-4. Note your IP address shown (e.g., `192.168.1.100:9527`)
+**GUI:** Run → "📥 Receive" → "▶ Start Server"
 
 **Terminal:**
 ```bash
 ./toolza_cli receive
+./toolza_cli receive -d ./downloads -x    # with auto-extract
+./toolza_cli receive --transport kcp      # KCP protocol (faster)
 ```
 
-### Step 3: Send Files (Computer B)
+### 3️⃣ Send Files (Computer B)
 
-**GUI:**
-1. Run `toolza_sender`
-2. Click "📤 Send" in the left menu
-3. Enter IP address of Computer A (e.g., `192.168.1.100`)
-4. Click "➕ Add"
-5. Click "➕ Files" or "📁 Folder" to select files
-6. Click "🚀 Send"
+**GUI:** Run → "📤 Send" → Enter IP → Add files → "🚀 Send"
 
 **Terminal:**
 ```bash
-# Send a single file
-./toolza_cli send -t 192.168.1.100 myfile.zip
-
-# Send a folder
-./toolza_cli send -t 192.168.1.100 ./my_folder/
-
-# Send with compression (faster for text files)
-./toolza_cli send -t 192.168.1.100 -c ./my_folder/
+./toolza_cli send -t 192.168.1.100 file.zip
+./toolza_cli send -t 192.168.1.100 -c ./folder/           # with compression
+./toolza_cli send -t 192.168.1.100 --transport kcp ./data # KCP protocol
 ```
 
-## All CLI Commands
+## CLI Reference
 
-### Send files
+### `send` — Send files
 
 ```bash
-toolza_cli send [OPTIONS] <FILES>...
+toolza_cli send [OPTIONS] -t <TARGETS> <FILES>...
 
-# Required:
-  -t, --targets <IP>     Receiver IP address(es), comma-separated
-
-# Optional:
-  -p, --port <PORT>      Port number (default: 9527)
+Options:
+  -t, --targets <IP>     Receiver IP(s), comma-separated (required)
+  -p, --port <PORT>      Port [default: 9527]
   -c, --compress         Enable LZ4 compression
   -s, --sync             Sync mode (only changed files)
   --flat                 Don't preserve folder structure
-  --transport <TYPE>     Protocol: tcp, udp, quic, kcp (default: tcp)
-
-# Examples:
-toolza_cli send -t 192.168.1.100 file.zip
-toolza_cli send -t 192.168.1.100,192.168.1.101 -c ./folder/
-toolza_cli send -t 192.168.1.100 --transport kcp ./files/
+  --transport <TYPE>     Protocol: tcp, udp, quic, kcp [default: tcp]
 ```
 
-### Receive files
+### `receive` — Receive files (server mode)
 
 ```bash
 toolza_cli receive [OPTIONS]
 
-# Optional:
-  -p, --port <PORT>      Listen port (default: 9527)
-  -d, --dir <PATH>       Save directory (default: Downloads)
-  -x, --extract          Auto-extract .tar.lz4 archives
-  --transport <TYPE>     Protocol: tcp, udp, quic, kcp (default: tcp)
-
-# Examples:
-toolza_cli receive
-toolza_cli receive -d ./downloads -x
-toolza_cli receive --transport kcp
+Options:
+  -p, --port <PORT>      Listen port [default: 9527]
+  -d, --dir <PATH>       Save directory [default: Downloads]
+  -x, --extract          Auto-extract tar.lz4/tar.zst archives
+  --transport <TYPE>     Protocol: tcp, udp, quic, kcp [default: tcp]
 ```
 
-### Find servers on network
+### `scan` — Find servers on network
 
 ```bash
 toolza_cli scan [OPTIONS]
 
-# Optional:
-  -p, --port <PORT>      Port to check (default: 9527)
+Options:
+  -p, --port <PORT>      Port to check [default: 9527]
   -s, --subnets <LIST>   Subnets to scan (e.g., 192.168.1,10.0.0)
-
-# Examples:
-toolza_cli scan
-toolza_cli scan -s 192.168.1,10.0.0
 ```
 
-### Speed test
+### `speedtest` — Test connection speed
 
 ```bash
 toolza_cli speedtest <SERVER_IP> [OPTIONS]
 
-# Required:
-  <SERVER_IP>            Server address
-
-# Optional:
-  -p, --port <PORT>      Port (default: 9527)
-  -m, --size <MB>        Test data size in MB (default: 10)
-  --transport <TYPE>     Protocol: tcp, udp, quic, kcp (default: tcp)
-
-# Examples:
-toolza_cli speedtest 192.168.1.100
-toolza_cli speedtest 192.168.1.100 -m 50 --transport kcp
+Options:
+  -p, --port <PORT>      Port [default: 9527]
+  -m, --size <MB>        Test data size in MB [default: 10]
+  --transport <TYPE>     Protocol: tcp, udp, quic, kcp [default: tcp]
 ```
-
-> ⚠️ Server must be running `receive` mode with the same protocol!
 
 ## Protocols
 
-| Protocol | Description | Best for |
-|----------|-------------|----------|
-| **TCP** | Reliable, standard | Default choice, large files |
-| **UDP** | Fast, no guarantees | Testing only! |
-| **QUIC** | Encrypted, modern | Internet transfers |
-| **KCP** | Fast, low latency | LAN, max speed (+30-40%) |
+| Protocol | Speed | Reliability | Encryption | Best for |
+|----------|-------|-------------|------------|----------|
+| **TCP** | ⭐⭐⭐ | ✅ Guaranteed | ❌ | Default, large files |
+| **UDP** | ⭐⭐⭐⭐ | ❌ None | ❌ | Testing only |
+| **QUIC** | ⭐⭐⭐ | ✅ Guaranteed | ✅ TLS 1.3 | Internet transfers |
+| **KCP** | ⭐⭐⭐⭐⭐ | ✅ Guaranteed | ❌ | LAN, max speed (+30-40%) |
 
-## Features
+## Supported Archives (Auto-extract)
 
-- ⚡ **Fast** — Adaptive chunk size (16KB-512KB)
-- 🗜️ **Compression** — Optional LZ4 for faster transfers
-- 📁 **Folders** — Transfer entire directories
-- 👥 **Multi-target** — Send to multiple computers at once
-- 🔄 **Resume** — Auto-resume interrupted transfers
-- 📦 **Auto-extract** — Unpack `.tar.lz4` on receive
-- 🔍 **Auto-discover** — Find servers on network
-- 🌍 **Multi-language** — Russian, Ukrainian, English UI
+| Format | Streaming | Description |
+|--------|-----------|-------------|
+| `.tar.lz4` | ✅ On-the-fly | Fast LZ4 compression |
+| `.tar.zst` | ✅ On-the-fly | Zstandard compression (supports `--long=31`) |
+| `.tar.gz` / `.tgz` | ❌ | Standard gzip |
+| `.tar` | ❌ | Uncompressed tar |
+| `.zip` | ❌ | Standard zip |
+| `.lz4` | ❌ | Raw LZ4 file |
 
-## Building with all protocols
-
-```bash
-# TCP + QUIC + KCP (recommended)
-cargo build --release
-
-# Or explicitly:
-cargo build --release --features "quic,kcp"
-```
+> 💡 **Streaming extraction** means archives are unpacked directly from network stream without loading entire file into RAM. Perfect for huge archives (tested with 1.8TB+).
 
 ---
 
@@ -187,201 +157,207 @@ cargo build --release --features "quic,kcp"
 
 ## Что это?
 
-Программа для **быстрой передачи файлов между компьютерами** в одной сети. Работает так:
+Программа для **быстрой передачи файлов между компьютерами** в одной сети:
 
-1. **Компьютер А** (получатель) запускает сервер
-2. **Компьютер Б** (отправитель) подключается и отправляет файлы
-3. Готово! Файлы появляются на Компьютере А
+```
+┌─────────────────┐         ┌─────────────────┐
+│   Компьютер А   │         │   Компьютер Б   │
+│   (Получатель)  │◄────────│  (Отправитель)  │
+│  Режим сервера  │  файлы  │  Режим клиента  │
+└─────────────────┘         └─────────────────┘
+```
 
-## Быстрый старт (5 минут)
+## Быстрый старт
 
-### Шаг 1: Скачать или собрать
+### 1️⃣ Сборка
 
 ```bash
-# Клонируем репозиторий
 git clone https://github.com/LordixDemon/toolza_sender.git
 cd toolza_sender
-
-# Собираем (нужен установленный Rust)
 cargo build --release
 ```
 
-Бинарники появятся в `target/release/`:
-- `toolza_sender` — GUI версия (с кнопками и окошками)
-- `toolza_cli` — Терминальная версия (для серверов или продвинутых)
+**Бинарники в `target/release/`:**
+- `toolza_sender` — GUI версия
+- `toolza_cli` — Терминальная версия
 
-### Шаг 2: Принять файлы (Компьютер А)
+### 2️⃣ Принять файлы (Компьютер А)
 
-**GUI:**
-1. Запустите `toolza_sender`
-2. Нажмите "📥 Приём" в левом меню
-3. Нажмите "▶ Запустить сервер"
-4. Запомните показанный IP адрес (например, `192.168.1.100:9527`)
+**GUI:** Запустить → "📥 Приём" → "▶ Запустить сервер"
 
 **Терминал:**
 ```bash
 ./toolza_cli receive
+./toolza_cli receive -d ./downloads -x    # с авто-распаковкой
+./toolza_cli receive --transport kcp      # протокол KCP (быстрее)
 ```
 
-### Шаг 3: Отправить файлы (Компьютер Б)
+### 3️⃣ Отправить файлы (Компьютер Б)
 
-**GUI:**
-1. Запустите `toolza_sender`
-2. Нажмите "📤 Отправка" в левом меню
-3. Введите IP адрес Компьютера А (например, `192.168.1.100`)
-4. Нажмите "➕ Добавить"
-5. Нажмите "➕ Файлы" или "📁 Папку" для выбора файлов
-6. Нажмите "🚀 Отправить"
+**GUI:** Запустить → "📤 Отправка" → Ввести IP → Добавить файлы → "🚀 Отправить"
 
 **Терминал:**
 ```bash
-# Отправить один файл
-./toolza_cli send -t 192.168.1.100 myfile.zip
-
-# Отправить папку
-./toolza_cli send -t 192.168.1.100 ./my_folder/
-
-# Отправить со сжатием (быстрее для текстов)
-./toolza_cli send -t 192.168.1.100 -c ./my_folder/
+./toolza_cli send -t 192.168.1.100 file.zip
+./toolza_cli send -t 192.168.1.100 -c ./folder/           # со сжатием
+./toolza_cli send -t 192.168.1.100 --transport kcp ./data # протокол KCP
 ```
 
-## Все команды CLI
+## Справка по CLI
 
-### Отправка файлов
+### `send` — Отправка файлов
 
 ```bash
-toolza_cli send [ОПЦИИ] <ФАЙЛЫ>...
+toolza_cli send [ОПЦИИ] -t <АДРЕСА> <ФАЙЛЫ>...
 
-# Обязательно:
-  -t, --targets <IP>     IP адрес(а) получателей, через запятую
-
-# Опционально:
-  -p, --port <PORT>      Порт (по умолчанию: 9527)
+Опции:
+  -t, --targets <IP>     IP получателей, через запятую (обязательно)
+  -p, --port <PORT>      Порт [по умолчанию: 9527]
   -c, --compress         Включить LZ4 сжатие
   -s, --sync             Режим синхронизации (только изменённые)
   --flat                 Не сохранять структуру папок
-  --transport <TYPE>     Протокол: tcp, udp, quic, kcp (по умолчанию: tcp)
-
-# Примеры:
-toolza_cli send -t 192.168.1.100 file.zip
-toolza_cli send -t 192.168.1.100,192.168.1.101 -c ./folder/
-toolza_cli send -t 192.168.1.100 --transport kcp ./files/
+  --transport <TYPE>     Протокол: tcp, udp, quic, kcp [по умолчанию: tcp]
 ```
 
-### Приём файлов
+### `receive` — Приём файлов (режим сервера)
 
 ```bash
 toolza_cli receive [ОПЦИИ]
 
-# Опционально:
-  -p, --port <PORT>      Порт прослушивания (по умолчанию: 9527)
-  -d, --dir <PATH>       Папка для сохранения (по умолчанию: Загрузки)
-  -x, --extract          Авто-распаковка .tar.lz4 архивов
-  --transport <TYPE>     Протокол: tcp, udp, quic, kcp (по умолчанию: tcp)
-
-# Примеры:
-toolza_cli receive
-toolza_cli receive -d ./downloads -x
-toolza_cli receive --transport kcp
+Опции:
+  -p, --port <PORT>      Порт прослушивания [по умолчанию: 9527]
+  -d, --dir <PATH>       Папка для сохранения [по умолчанию: Загрузки]
+  -x, --extract          Авто-распаковка tar.lz4/tar.zst архивов
+  --transport <TYPE>     Протокол: tcp, udp, quic, kcp [по умолчанию: tcp]
 ```
 
-### Поиск серверов в сети
+### `scan` — Поиск серверов в сети
 
 ```bash
 toolza_cli scan [ОПЦИИ]
 
-# Опционально:
-  -p, --port <PORT>      Порт для проверки (по умолчанию: 9527)
+Опции:
+  -p, --port <PORT>      Порт для проверки [по умолчанию: 9527]
   -s, --subnets <LIST>   Подсети для сканирования (напр: 192.168.1,10.0.0)
-
-# Примеры:
-toolza_cli scan
-toolza_cli scan -s 192.168.1,10.0.0
 ```
 
-### Тест скорости
+### `speedtest` — Тест скорости
 
 ```bash
 toolza_cli speedtest <IP_СЕРВЕРА> [ОПЦИИ]
 
-# Обязательно:
-  <IP_СЕРВЕРА>           Адрес сервера
-
-# Опционально:
-  -p, --port <PORT>      Порт (по умолчанию: 9527)
-  -m, --size <МБ>        Размер тестовых данных в МБ (по умолчанию: 10)
-  --transport <TYPE>     Протокол: tcp, udp, quic, kcp (по умолчанию: tcp)
-
-# Примеры:
-toolza_cli speedtest 192.168.1.100
-toolza_cli speedtest 192.168.1.100 -m 50 --transport kcp
+Опции:
+  -p, --port <PORT>      Порт [по умолчанию: 9527]
+  -m, --size <МБ>        Размер тестовых данных в МБ [по умолчанию: 10]
+  --transport <TYPE>     Протокол: tcp, udp, quic, kcp [по умолчанию: tcp]
 ```
-
-> ⚠️ На сервере должен быть запущен режим `receive` с тем же протоколом!
 
 ## Протоколы
 
-| Протокол | Описание | Когда использовать |
-|----------|----------|-------------------|
-| **TCP** | Надёжный, стандартный | По умолчанию, большие файлы |
-| **UDP** | Быстрый, без гарантий | Только для тестов! |
-| **QUIC** | Шифрованный, современный | Передача через интернет |
-| **KCP** | Быстрый, низкая задержка | LAN, макс. скорость (+30-40%) |
+| Протокол | Скорость | Надёжность | Шифрование | Когда использовать |
+|----------|----------|------------|------------|-------------------|
+| **TCP** | ⭐⭐⭐ | ✅ Гарантирована | ❌ | По умолчанию, большие файлы |
+| **UDP** | ⭐⭐⭐⭐ | ❌ Нет | ❌ | Только для тестов |
+| **QUIC** | ⭐⭐⭐ | ✅ Гарантирована | ✅ TLS 1.3 | Передача через интернет |
+| **KCP** | ⭐⭐⭐⭐⭐ | ✅ Гарантирована | ❌ | LAN, макс. скорость (+30-40%) |
 
-## Возможности
+## Поддерживаемые архивы (Авто-распаковка)
 
-- ⚡ **Быстро** — Адаптивный размер чанков (16KB-512KB)
-- 🗜️ **Сжатие** — Опциональное LZ4 для ускорения
-- 📁 **Папки** — Передача целых директорий
-- 👥 **Мульти-отправка** — На несколько компов одновременно
-- 🔄 **Докачка** — Автоматическое возобновление
-- 📦 **Авто-распаковка** — Распаковка `.tar.lz4` при получении
-- 🔍 **Автопоиск** — Поиск серверов в сети
-- 🌍 **Мультиязычность** — Русский, Украинский, Английский интерфейс
+| Формат | Потоковая | Описание |
+|--------|-----------|----------|
+| `.tar.lz4` | ✅ На лету | Быстрое LZ4 сжатие |
+| `.tar.zst` | ✅ На лету | Zstandard сжатие (поддержка `--long=31`) |
+| `.tar.gz` / `.tgz` | ❌ | Стандартный gzip |
+| `.tar` | ❌ | Несжатый tar |
+| `.zip` | ❌ | Стандартный zip |
+| `.lz4` | ❌ | Сырой LZ4 файл |
 
-## Сборка со всеми протоколами
-
-```bash
-# TCP + QUIC + KCP (рекомендуется)
-cargo build --release
-
-# Или явно:
-cargo build --release --features "quic,kcp"
-```
+> 💡 **Потоковая распаковка** означает, что архивы распаковываются прямо из сетевого потока без загрузки всего файла в RAM. Идеально для огромных архивов (протестировано на 1.8TB+).
 
 ---
 
-## 📁 Project Structure / Структура проекта
+## 📁 Структура проекта
 
 ```
 src/
-├── main.rs              # GUI entry point
-├── lib.rs               # Shared library
-├── bin/cli.rs           # CLI binary
-├── app/                 # Application state & actions
-├── network/             # Network logic
-│   ├── sender.rs        # Send files
-│   ├── receiver/        # Receive files (module)
-│   ├── scanner.rs       # Network scanning
-│   ├── speedtest.rs     # Speed test
-│   └── transport/       # Protocol abstractions
+├── main.rs                 # GUI точка входа
+├── lib.rs                  # Общая библиотека
+├── bin/cli.rs              # CLI бинарник
+│
+├── app/                    # Состояние приложения
+│   ├── state.rs            # Структура App
+│   ├── actions.rs          # Действия (старт/стоп сервера, отправка)
+│   └── event_handler.rs    # Обработка событий передачи
+│
+├── network/                # Сетевая логика
+│   ├── sender.rs           # Отправка файлов
+│   ├── receiver/           # Приём файлов
+│   │   ├── handlers.rs     # Обработчики подключений
+│   │   ├── streaming.rs    # Потоковая распаковка
+│   │   └── options.rs      # Опции сервера
+│   ├── scanner.rs          # Сканирование сети
+│   ├── speedtest.rs        # Тест скорости
+│   ├── compression.rs      # LZ4 сжатие
+│   └── transport/          # Транспортные протоколы
 │       ├── tcp.rs
 │       ├── udp.rs
 │       ├── quic.rs
 │       └── kcp.rs
-├── ui/                  # GUI views
-├── extract/             # Archive extraction (module)
-├── i18n/                # Translations
-├── protocol.rs          # Binary protocol
-├── stats.rs             # Transfer statistics
-├── history.rs           # Transfer history
-└── utils.rs             # Utilities
+│
+├── extract/                # Распаковка архивов
+│   ├── lz4.rs              # tar.lz4, lz4
+│   ├── zst.rs              # tar.zst
+│   ├── tar.rs              # tar, tar.gz
+│   ├── zip.rs              # zip
+│   └── types.rs            # Типы архивов
+│
+├── ui/                     # GUI интерфейс
+│   ├── send_view.rs        # Вкладка отправки
+│   ├── receive_view.rs     # Вкладка приёма
+│   ├── extract_view.rs     # Вкладка распаковки
+│   ├── history_view.rs     # История передач
+│   ├── speedtest_view.rs   # Тест скорости
+│   └── widgets.rs          # Общие виджеты
+│
+├── i18n/                   # Переводы
+│   └── translations.rs     # RU, UA, EN
+│
+├── protocol.rs             # Бинарный протокол передачи
+├── sync.rs                 # Синхронизация файлов
+├── stats.rs                # Статистика передач
+├── history.rs              # История
+└── utils.rs                # Утилиты
 ```
 
-## 📝 License / Лицензия
+## 🛠️ Сборка
 
-MIT License — use freely! / MIT — используйте свободно!
+```bash
+# Полная сборка (TCP + QUIC + KCP)
+cargo build --release
+
+# Минимальная сборка (только TCP + UDP)
+cargo build --release --no-default-features --features minimal
+
+# Проверить фичи
+cargo build --release --features "quic,kcp"
+```
+
+### Требования
+
+- **Rust 1.75+** (из-за async traits)
+- **Linux:** `libgtk-3-dev` для диалогов выбора файлов
+- **Windows/macOS:** ничего дополнительного
+
+## 📝 Лицензия
+
+MIT License — используйте свободно!
 
 ---
 
+<div align="center">
+
 **Made with ❤️ and 🦀 Rust**
+
+*Если проект полезен — поставьте ⭐ на GitHub!*
+
+</div>

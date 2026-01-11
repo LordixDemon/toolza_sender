@@ -5,6 +5,7 @@ mod receive_view;
 mod extract_view;
 mod history_view;
 mod speedtest_view;
+mod extraction_window;
 mod widgets;
 
 use crate::app::{App, Mode};
@@ -25,9 +26,12 @@ impl eframe::App for App {
         self.handle_drag_drop(ctx);
         
         // Запрашиваем перерисовку при активных операциях (раз в секунду, не чаще!)
-        if self.is_running || self.is_scanning || self.speedtest_running {
+        if self.is_running || self.is_scanning || self.speedtest_running || self.extraction_window_open {
             ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
+        
+        // Окно распаковки
+        self.render_extraction_window(ctx);
         
         // Боковая панель
         self.render_sidebar(ctx);

@@ -4,6 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveType {
     TarLz4,
+    TarZst,
     Lz4,
     Tar,
     TarGz,
@@ -20,6 +21,8 @@ impl ArchiveType {
         
         if lower.ends_with(".tar.lz4") || lower.ends_with(".tlz4") {
             Self::TarLz4
+        } else if lower.ends_with(".tar.zst") || lower.ends_with(".tzst") {
+            Self::TarZst
         } else if lower.ends_with(".lz4") {
             Self::Lz4
         } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
@@ -41,6 +44,7 @@ impl ArchiveType {
     pub fn name(&self) -> &'static str {
         match self {
             Self::TarLz4 => "tar.lz4",
+            Self::TarZst => "tar.zst",
             Self::Lz4 => "lz4",
             Self::Tar => "tar",
             Self::TarGz => "tar.gz",
@@ -73,6 +77,7 @@ impl ExtractOptions {
     pub fn should_extract(&self, archive_type: ArchiveType) -> bool {
         match archive_type {
             ArchiveType::TarLz4 => self.tar_lz4,
+            ArchiveType::TarZst => self.tar_lz4, // Используем ту же опцию что и tar.lz4
             ArchiveType::Lz4 => self.lz4,
             ArchiveType::Tar | ArchiveType::TarGz => self.tar,
             ArchiveType::Zip => self.zip,

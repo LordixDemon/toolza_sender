@@ -332,6 +332,7 @@ async fn receive_files(port: u16, save_dir: Option<PathBuf>, auto_extract: bool,
     let options = network::ServerOptions {
         extract_options: network::ExtractOptions {
             tar_lz4: auto_extract,
+            tar_zst: auto_extract,
             lz4: false,
             tar: false,
             zip: false,

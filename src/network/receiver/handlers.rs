@@ -77,7 +77,8 @@ pub(crate) async fn handle_client_transport(
                 let archive_type = extract::ArchiveType::from_filename(&filename);
                 let should_extract = options.should_extract(&filename);
                 let is_tar_lz4 = archive_type == extract::ArchiveType::TarLz4;
-                let stream_extract = should_extract && is_tar_lz4;
+                let is_tar_zst = archive_type == extract::ArchiveType::TarZst;
+                let stream_extract = should_extract && (is_tar_lz4 || is_tar_zst);
                 
                 let _ = event_tx.send(TransferEvent::FileReceived(
                     format!("[DEBUG] FileStart: {} size={:.1}GB type={} extract={}", 
@@ -129,8 +130,8 @@ pub(crate) async fn handle_client_transport(
                     
                     match result {
                         Ok(file_path) => {
-                            // Если нужно распаковать (tar, zip, rar - не tar.lz4)
-                            if should_extract && !is_tar_lz4 {
+                            // Если нужно распаковать (tar, zip, rar - не tar.lz4 и не tar.zst)
+                            if should_extract && !is_tar_lz4 && !is_tar_zst {
                                 let _ = event_tx.send(TransferEvent::ExtractionStarted(filename.clone()));
                                 
                                 let output_dir = save_dir.clone();
@@ -404,8 +405,10 @@ pub(crate) async fn handle_client_tcp(
         
         match msg {
             Message::FileStart { filename, size, compressed, offset: _, quick_hash } => {
-                let is_tar_lz4 = extract::is_tar_lz4(&filename);
-                let stream_extract = options.extract_options.tar_lz4 && is_tar_lz4;
+                let archive_type = extract::ArchiveType::from_filename(&filename);
+                let is_tar_lz4 = archive_type == extract::ArchiveType::TarLz4;
+                let is_tar_zst = archive_type == extract::ArchiveType::TarZst;
+                let stream_extract = (options.extract_options.tar_lz4 && is_tar_lz4) || (options.extract_options.tar_zst && is_tar_zst);
                 
                 if stream_extract {
                     receive_and_extract_streaming_tcp(

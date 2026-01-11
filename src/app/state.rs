@@ -97,6 +97,8 @@ pub struct App {
     pub received_files: Vec<(String, u64)>,
     /// Автоматически распаковывать tar.lz4 архивы
     pub auto_extract_tar_lz4: bool,
+    /// Автоматически распаковывать tar.zst архивы
+    pub auto_extract_tar_zst: bool,
     /// Автоматически распаковывать .lz4 файлы (не tar)
     pub auto_extract_lz4: bool,
     /// Автоматически распаковывать tar/tar.gz архивы
@@ -154,6 +156,18 @@ pub struct App {
     /// Флаг остановки распаковки
     pub extract_stop_flag: Arc<AtomicBool>,
     
+    // === Окно распаковки на лету ===
+    /// Показывать окно распаковки
+    pub extraction_window_open: bool,
+    /// Имя текущего распаковываемого архива
+    pub extraction_filename: String,
+    /// Количество распакованных файлов
+    pub extraction_files_count: usize,
+    /// Общий размер распакованных данных
+    pub extraction_total_size: u64,
+    /// Текущий файл в процессе распаковки
+    pub extraction_current_file: String,
+    
     // === Runtime ===
     pub runtime: tokio::runtime::Runtime,
     pub event_rx: Option<mpsc::UnboundedReceiver<TransferEvent>>,
@@ -193,6 +207,7 @@ impl App {
             save_directory: save_dir.clone(),
             received_files: Vec::new(),
             auto_extract_tar_lz4: false,
+            auto_extract_tar_zst: false,
             auto_extract_lz4: false,
             auto_extract_tar: false,
             auto_extract_zip: false,
@@ -222,6 +237,11 @@ impl App {
             extract_running: false,
             extract_result: None,
             extract_stop_flag: Arc::new(AtomicBool::new(false)),
+            extraction_window_open: false,
+            extraction_filename: String::new(),
+            extraction_files_count: 0,
+            extraction_total_size: 0,
+            extraction_current_file: String::new(),
             runtime: tokio::runtime::Runtime::new().unwrap(),
             event_rx: None,
             stop_flag: Arc::new(AtomicBool::new(false)),
