@@ -171,8 +171,22 @@ pub(crate) fn extract_from_channel_zst(
     let mut total_size = 0u64;
     
     // Читаем и распаковываем файлы по одному - ПОТОКОВО!
-    for entry_result in archive.entries().map_err(|e| format!("Ошибка чтения tar архива: {}", e))? {
-        let mut entry = entry_result.map_err(|e| format!("Ошибка чтения записи tar: {}", e))?;
+    let entries = archive.entries()
+        .map_err(|e| format!("Ошибка чтения tar архива: {}", e))?;
+    
+    for entry_result in entries {
+        let mut entry = match entry_result {
+            Ok(e) => e,
+            Err(e) => {
+                // Если ошибка чтения записи - это может быть конец архива или повреждение
+                // Проверяем, может быть это просто конец потока
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    // Конец данных - это нормально
+                    break;
+                }
+                return Err(format!("Ошибка чтения записи tar: {}", e));
+            }
+        };
         
         let path = entry.path()
             .map_err(|e| format!("Ошибка пути: {}", e))?
@@ -424,7 +438,13 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                 // Отправляем в распаковщик только если потоковая распаковка
                 if streaming_extract {
                     if tx.send(chunk_data).is_err() {
-                        return Err("Ошибка: распаковщик завершился раньше времени".to_string());
+                        // Распаковщик завершился - это может быть ошибка распаковки
+                        // Не закрываем соединение, просто логируем и продолжаем получать данные
+                        let _ = event_tx.send(TransferEvent::ExtractionError(
+                            filename.to_string(),
+                            "Распаковщик завершился раньше времени".to_string(),
+                        ));
+                        // Продолжаем получать данные, но не отправляем в распаковщик
                     }
                 }
             }
