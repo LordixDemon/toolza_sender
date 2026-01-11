@@ -10,8 +10,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Размер буфера чтения (64 МБ)
 const READ_BUFFER_SIZE: usize = 64 * 1024 * 1024;
-/// Размер чанка записи (4 МБ)
-const WRITE_CHUNK_SIZE: usize = 4 * 1024 * 1024;
+/// Размер буфера записи (64 МБ) - большой для NAS/сетевых дисков
+const WRITE_BUFFER_SIZE: usize = 64 * 1024 * 1024;
+/// Размер чанка записи (16 МБ) - оптимально для NAS
+const WRITE_CHUNK_SIZE: usize = 16 * 1024 * 1024;
 
 /// Распаковать обычный .lz4 файл (не архив) - потоковая распаковка
 pub fn extract_lz4(archive_path: &Path, output_dir: &Path) -> io::Result<ExtractResult> {
@@ -45,7 +47,7 @@ pub fn extract_lz4_streaming(
     let mut decoder = FrameDecoder::new(reader);
     
     let output_file = File::create(&output_path)?;
-    let mut writer = BufWriter::with_capacity(READ_BUFFER_SIZE, output_file);
+    let mut writer = BufWriter::with_capacity(WRITE_BUFFER_SIZE, output_file);
     let mut total_size = 0u64;
     let mut buffer = vec![0u8; WRITE_CHUNK_SIZE];
     
@@ -123,13 +125,36 @@ pub fn extract_tar_lz4_streaming(
                 fs::create_dir_all(parent)?;
             }
             let size = entry.header().size()?;
-            entry.unpack(&path)?;
+            
+            // Ручная распаковка с большим буфером записи для NAS
+            let out_file = File::create(&path)?;
+            let mut writer = BufWriter::with_capacity(WRITE_BUFFER_SIZE, out_file);
+            buffered_copy(&mut entry, &mut writer)?;
+            writer.flush()?;
+            
             files_count += 1;
             total_size += size;
         }
     }
     
     Ok(ExtractResult { files_count, total_size })
+}
+
+/// Копирование с большим буфером (16 МБ чанки)
+fn buffered_copy<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> io::Result<u64> {
+    let mut buffer = vec![0u8; WRITE_CHUNK_SIZE];
+    let mut total = 0u64;
+    
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        writer.write_all(&buffer[..bytes_read])?;
+        total += bytes_read as u64;
+    }
+    
+    Ok(total)
 }
 
 /// Синхронная распаковка tar.lz4 (алиас для потоковой версии)
