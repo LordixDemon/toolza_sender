@@ -331,12 +331,6 @@ impl App {
     fn on_extraction_started(&mut self, name: String) {
         self.status_message = format!("📦 Распаковка {}...", name);
         self.log(format!("📦 Распаковка: {}", name));
-        // Открываем окно распаковки
-        self.extraction_window_open = true;
-        self.extraction_filename = name.clone();
-        self.extraction_files_count = 0;
-        self.extraction_total_size = 0;
-        self.extraction_current_file = String::new();
     }
     
     fn on_extraction_completed(&mut self, name: String, files_count: usize, total_size: u64) {

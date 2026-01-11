@@ -171,8 +171,8 @@ pub(crate) fn extract_from_channel_zst(
     let mut total_size = 0u64;
     
     // Читаем и распаковываем файлы по одному - ПОТОКОВО!
-    for entry_result in archive.entries().map_err(|e| format!("Ошибка чтения tar: {}", e))? {
-        let mut entry = entry_result.map_err(|e| format!("Ошибка записи tar: {}", e))?;
+    for entry_result in archive.entries().map_err(|e| format!("Ошибка чтения tar архива: {}", e))? {
+        let mut entry = entry_result.map_err(|e| format!("Ошибка чтения записи tar: {}", e))?;
         
         let path = entry.path()
             .map_err(|e| format!("Ошибка пути: {}", e))?
