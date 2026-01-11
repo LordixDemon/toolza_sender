@@ -21,8 +21,10 @@ pub fn extract_tar_zst_streaming(
     let file = File::open(archive_path)?;
     let reader = BufReader::with_capacity(1024 * 1024, file); // 1MB буфер
     
-    // ZST decoder работает потоково - не грузит всё в RAM
-    let decoder = zstd::stream::Decoder::new(reader)?;
+    // ZST decoder с поддержкой больших фреймов (--long=31)
+    // window_log_max=31 позволяет декодировать архивы с окном до 2GB
+    let mut decoder = zstd::stream::Decoder::with_buffer(reader)?;
+    decoder.window_log_max(31)?;
     
     // tar::Archive тоже работает потоково
     let mut archive = tar::Archive::new(decoder);
