@@ -166,11 +166,13 @@ pub(crate) fn extract_from_channel_zst(
     
     // ZST decoder поверх buffered reader
     // Используем DecoderBuilder для настройки лимита памяти для больших фреймов
+    // window_log_max=31 поддерживает архивы, сжатые с --long=31 (до 2GB окно)
     let zst_reader = match zstd::stream::Decoder::with_buffer(buffered_reader) {
         Ok(mut decoder) => {
-            // Устанавливаем большой лимит памяти для декодирования (window_log_max=30 = до 1GB на фрейм)
-            if let Err(e) = decoder.window_log_max(30) {
-                let err_msg = format!("Ошибка настройки декодера: {}", e);
+            // Устанавливаем максимальный лимит памяти для декодирования (window_log_max=31 = до 2GB на фрейм)
+            // Это необходимо для архивов, сжатых с параметром --long=31
+            if let Err(e) = decoder.window_log_max(31) {
+                let err_msg = format!("Ошибка настройки декодера (window_log_max=31): {}", e);
                 let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
                 return Err(err_msg);
             }
