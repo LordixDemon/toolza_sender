@@ -1,6 +1,7 @@
 //! UI для локальной распаковки архивов
 
 use crate::app::App;
+use toolza_sender::utils::truncate_string;
 use eframe::egui;
 
 impl App {
@@ -24,11 +25,7 @@ impl App {
             
             if let Some(ref path) = self.extract_archive_path {
                 let path_str = path.display().to_string();
-                let short_path = if path_str.len() > 50 {
-                    format!("...{}", &path_str[path_str.len()-47..])
-                } else {
-                    path_str
-                };
+                let short_path = truncate_string(&path_str, 50);
                 ui.label(egui::RichText::new(short_path).monospace());
             } else {
                 ui.label(egui::RichText::new(t.no_archive_selected).color(egui::Color32::GRAY).italics());
@@ -48,11 +45,7 @@ impl App {
             ui.label(t.extract_destination);
             
             let dest_str = self.extract_destination.display().to_string();
-            let short_dest = if dest_str.len() > 50 {
-                format!("...{}", &dest_str[dest_str.len()-47..])
-            } else {
-                dest_str
-            };
+            let short_dest = truncate_string(&dest_str, 50);
             ui.label(egui::RichText::new(short_dest).monospace());
         });
         

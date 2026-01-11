@@ -2,7 +2,7 @@
 
 use crate::app::{App, TargetStatus};
 use toolza_sender::protocol::FileStatus;
-use toolza_sender::utils::format_size;
+use toolza_sender::utils::{format_size, truncate_string};
 use eframe::egui;
 
 impl App {
@@ -88,11 +88,7 @@ impl App {
                         ui.label(icon);
                         
                         // Путь файла (с обрезкой если слишком длинный)
-                        let path_display = if file.relative_path.len() > 50 {
-                            format!("...{}", &file.relative_path[file.relative_path.len()-47..])
-                        } else {
-                            file.relative_path.clone()
-                        };
+                        let path_display = truncate_string(&file.relative_path, 50);
                         ui.label(path_display).on_hover_text(&file.relative_path);
                         
                         // Размер
@@ -137,12 +133,8 @@ impl App {
                     for (name, size) in &self.received_files {
                         ui.horizontal(|ui| {
                             ui.label("✅");
-                            // Обрезаем длинные пути
-                            let name_display = if name.len() > 50 {
-                                format!("...{}", &name[name.len()-47..])
-                            } else {
-                                name.clone()
-                            };
+                            // Обрезаем длинные пути (безопасно для UTF-8)
+                            let name_display = truncate_string(name, 50);
                             ui.label(name_display).on_hover_text(name);
                             ui.label(format!("({})", format_size(*size)));
                         });

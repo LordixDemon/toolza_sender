@@ -1,5 +1,17 @@
 //! Вспомогательные утилиты
 
+/// Безопасно обрезает строку до max_chars символов (не байт!) с начала
+/// Если строка длиннее - показывает "..." и конец строки
+pub fn truncate_string(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        s.to_string()
+    } else {
+        let skip = char_count.saturating_sub(max_chars.saturating_sub(3));
+        format!("...{}", s.chars().skip(skip).collect::<String>())
+    }
+}
+
 /// Форматирование размера файла в человекочитаемый вид
 pub fn format_size(size: u64) -> String {
     const KB: u64 = 1024;
