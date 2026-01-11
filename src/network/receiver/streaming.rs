@@ -161,8 +161,14 @@ pub(crate) fn extract_from_channel_zst(
     let channel_reader = ChannelReader::new(rx);
     
     // ZST decoder поверх channel reader
-    let zst_reader = zstd::stream::Decoder::new(channel_reader)
-        .map_err(|e| format!("Ошибка создания ZST декодера: {}", e))?;
+    let zst_reader = match zstd::stream::Decoder::new(channel_reader) {
+        Ok(decoder) => decoder,
+        Err(e) => {
+            let err_msg = format!("Ошибка создания ZST декодера: {}", e);
+            let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+            return Err(err_msg);
+        }
+    };
     
     // Tar archive поверх ZST decoder
     let mut archive = tar::Archive::new(zst_reader);
@@ -171,8 +177,14 @@ pub(crate) fn extract_from_channel_zst(
     let mut total_size = 0u64;
     
     // Читаем и распаковываем файлы по одному - ПОТОКОВО!
-    let entries = archive.entries()
-        .map_err(|e| format!("Ошибка чтения tar архива: {}", e))?;
+    let entries = match archive.entries() {
+        Ok(e) => e,
+        Err(e) => {
+            let err_msg = format!("Ошибка чтения tar архива: {} (kind: {:?})", e, e.kind());
+            let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+            return Err(err_msg);
+        }
+    };
     
     for entry_result in entries {
         let mut entry = match entry_result {
@@ -181,10 +193,13 @@ pub(crate) fn extract_from_channel_zst(
                 // Если ошибка чтения записи - это может быть конец архива или повреждение
                 // Проверяем, может быть это просто конец потока
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    // Конец данных - это нормально
+                    // Конец данных - это нормально, возможно данные еще не все получены
+                    // Не возвращаем ошибку, просто завершаем цикл
                     break;
                 }
-                return Err(format!("Ошибка чтения записи tar: {}", e));
+                let err_msg = format!("Ошибка чтения записи tar: {} (kind: {:?})", e, e.kind());
+                let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+                return Err(err_msg);
             }
         };
         
@@ -437,14 +452,18 @@ pub(crate) async fn receive_and_extract_streaming_transport(
                 
                 // Отправляем в распаковщик только если потоковая распаковка
                 if streaming_extract {
-                    if tx.send(chunk_data).is_err() {
-                        // Распаковщик завершился - это может быть ошибка распаковки
-                        // Не закрываем соединение, просто логируем и продолжаем получать данные
-                        let _ = event_tx.send(TransferEvent::ExtractionError(
-                            filename.to_string(),
-                            "Распаковщик завершился раньше времени".to_string(),
-                        ));
-                        // Продолжаем получать данные, но не отправляем в распаковщик
+                    match tx.send(chunk_data) {
+                        Ok(()) => {},
+                        Err(_) => {
+                            // Распаковщик завершился - это может быть ошибка распаковки
+                            // Не закрываем соединение, просто логируем и продолжаем получать данные
+                            let _ = event_tx.send(TransferEvent::ExtractionError(
+                                filename.to_string(),
+                                format!("Распаковщик завершился раньше времени (получено {} байт)", received_bytes),
+                            ));
+                            // Продолжаем получать данные, но не отправляем в распаковщик
+                            // Отключаем потоковую распаковку для следующих чанков
+                        }
                     }
                 }
             }
