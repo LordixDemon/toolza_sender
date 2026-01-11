@@ -160,11 +160,24 @@ pub(crate) fn extract_from_channel_zst(
     // Создаём reader из канала
     let channel_reader = ChannelReader::new(rx);
     
-    // ZST decoder поверх channel reader
-    let zst_reader = match zstd::stream::Decoder::new(channel_reader) {
-        Ok(decoder) => decoder,
+    // Обёртываем в BufReader для лучшей производительности
+    use std::io::BufReader;
+    let buffered_reader = BufReader::with_capacity(1024 * 1024, channel_reader); // 1MB буфер
+    
+    // ZST decoder поверх buffered reader
+    // Используем DecoderBuilder для настройки лимита памяти для больших фреймов
+    let zst_reader = match zstd::stream::Decoder::with_buffer(buffered_reader) {
+        Ok(mut decoder) => {
+            // Устанавливаем большой лимит памяти для декодирования (window_log_max=30 = до 1GB на фрейм)
+            if let Err(e) = decoder.window_log_max(30) {
+                let err_msg = format!("Ошибка настройки декодера: {}", e);
+                let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
+                return Err(err_msg);
+            }
+            decoder
+        },
         Err(e) => {
-            let err_msg = format!("Ошибка создания ZST декодера: {}", e);
+            let err_msg = format!("Ошибка создания ZST декодера с буфером: {}", e);
             let _ = event_tx.send(TransferEvent::ExtractionError(filename.to_string(), err_msg.clone()));
             return Err(err_msg);
         }
