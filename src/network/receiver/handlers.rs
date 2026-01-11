@@ -408,7 +408,7 @@ pub(crate) async fn handle_client_tcp(
                 let archive_type = extract::ArchiveType::from_filename(&filename);
                 let is_tar_lz4 = archive_type == extract::ArchiveType::TarLz4;
                 let is_tar_zst = archive_type == extract::ArchiveType::TarZst;
-                let stream_extract = options.extract_options.tar_lz4 && (is_tar_lz4 || is_tar_zst);
+                let stream_extract = (options.extract_options.tar_lz4 && is_tar_lz4) || (options.extract_options.tar_zst && is_tar_zst);
                 
                 if stream_extract {
                     receive_and_extract_streaming_tcp(

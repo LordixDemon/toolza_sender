@@ -89,6 +89,11 @@ impl App {
             
             ui.add_enabled(
                 self.can_edit(),
+                egui::Checkbox::new(&mut self.auto_extract_tar_zst, "tar.zst"),
+            ).on_hover_text("Автоматически распаковывать tar.zst архивы на лету");
+            
+            ui.add_enabled(
+                self.can_edit(),
                 egui::Checkbox::new(&mut self.auto_extract_lz4, "lz4"),
             ).on_hover_text(t.extract_tooltip_lz4);
             
@@ -108,8 +113,8 @@ impl App {
             ).on_hover_text(t.extract_tooltip_rar);
         });
         
-        // Опция сохранения архива для резюме (только если включена потоковая распаковка tar.lz4)
-        if self.auto_extract_tar_lz4 {
+        // Опция сохранения архива для резюме (только если включена потоковая распаковка tar.lz4 или tar.zst)
+        if self.auto_extract_tar_lz4 || self.auto_extract_tar_zst {
             let t = self.t();
             ui.horizontal(|ui| {
                 ui.add_enabled(

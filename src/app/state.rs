@@ -97,6 +97,8 @@ pub struct App {
     pub received_files: Vec<(String, u64)>,
     /// Автоматически распаковывать tar.lz4 архивы
     pub auto_extract_tar_lz4: bool,
+    /// Автоматически распаковывать tar.zst архивы
+    pub auto_extract_tar_zst: bool,
     /// Автоматически распаковывать .lz4 файлы (не tar)
     pub auto_extract_lz4: bool,
     /// Автоматически распаковывать tar/tar.gz архивы
@@ -205,6 +207,7 @@ impl App {
             save_directory: save_dir.clone(),
             received_files: Vec::new(),
             auto_extract_tar_lz4: false,
+            auto_extract_tar_zst: false,
             auto_extract_lz4: false,
             auto_extract_tar: false,
             auto_extract_zip: false,
